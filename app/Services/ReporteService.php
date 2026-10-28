@@ -3,11 +3,9 @@
 namespace App\Services;
 
 use App\Models\Pqrsd;
-use App\Services\SlaCalculator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class ReporteService
@@ -15,45 +13,9 @@ class ReporteService
     public function filtrar(Request $request): Builder
     {
         $query = Pqrsd::query()
-            ->with(['canal', 'tipo', 'sede', 'aseguradora', 'responsable', 'reglaSla']);
+            ->with(['canal', 'tipo', 'motivo', 'categoria', 'subcategoria', 'sede', 'aseguradora', 'responsable', 'reglaSla', 'encuesta', 'actuaciones.usuario']);
 
-        $user = Auth::user();
-        if ($user && ! $user->can('pqrsd.view_all')) {
-            $uid = $user->id;
-            $query->where(function ($q) use ($uid) {
-                $q->where('responsable_id', $uid)
-                    ->orWhere('creado_por', $uid)
-                    ->orWhere('radicado_por', $uid);
-            });
-        }
-
-        if ($request->filled('desde')) {
-            $query->whereDate('fecha_recepcion', '>=', $request->date('desde'));
-        }
-        if ($request->filled('hasta')) {
-            $query->whereDate('fecha_recepcion', '<=', $request->date('hasta'));
-        }
-        if ($request->filled('sede_id')) {
-            $query->where('sede_id', $request->integer('sede_id'));
-        }
-        if ($request->filled('aseguradora_id')) {
-            $query->where('aseguradora_id', $request->integer('aseguradora_id'));
-        }
-        if ($request->filled('tipo_pqrsd_id')) {
-            $query->where('tipo_pqrsd_id', $request->integer('tipo_pqrsd_id'));
-        }
-        if ($request->filled('nivel_riesgo')) {
-            $query->where('nivel_riesgo', $request->string('nivel_riesgo'));
-        }
-        if ($request->filled('responsable_id')) {
-            $query->where('responsable_id', $request->integer('responsable_id'));
-        }
-        if ($request->filled('estado_cumplimiento')) {
-            app(SlaCalculator::class)->restringirConsulta($query, (string) $request->string('estado_cumplimiento'));
-        }
-        if ($request->filled('estado_operativo')) {
-            $query->where('estado_operativo', $request->string('estado_operativo'));
-        }
+        app(IndicadoresPqrsdService::class)->aplicarFiltrosCohorte($query, $request);
 
         return $query->orderByDesc('fecha_recepcion');
     }
@@ -150,8 +112,13 @@ class ReporteService
                 'Radicado' => $c->radicado,
                 'Recepción' => $c->fecha_recepcion?->timezone('America/Bogota')->format('Y-m-d H:i'),
                 'Radicación' => $c->fecha_radicacion?->timezone('America/Bogota')->format('Y-m-d H:i'),
-                'Tipo' => $c->tipo?->nombre,
+                'Tipo' => $c->tipo?->nombre ?? 'Pendiente de clasificación',
+                'Categoría' => $c->categoria?->nombre,
+                'Subcategoría' => $c->subcategoria?->nombre,
+                'Motivo' => $c->motivo?->nombre,
                 'Riesgo' => $c->nivel_riesgo,
+                'Identificación' => $c->es_anonimo ? 'Anónimo' : trim(($c->solicitante_tipo_documento ?? '').' '.($c->solicitante_documento ?? '')),
+                'Teléfono' => $c->es_anonimo ? null : $c->solicitante_telefono,
                 'EPS' => $c->aseguradora?->nombre,
                 'Sede' => $c->sede?->nombre,
                 'Canal' => $c->canal?->nombre,
@@ -162,6 +129,12 @@ class ReporteService
                 'Plazo regla' => $c->reglaSla?->codigo,
                 'Fecha límite' => $c->fecha_limite?->timezone('America/Bogota')->format('Y-m-d H:i'),
                 'Fecha respuesta' => $c->fecha_respuesta?->timezone('America/Bogota')->format('Y-m-d H:i'),
+                'Fecha cierre' => $c->fecha_cierre?->timezone('America/Bogota')->format('Y-m-d H:i'),
+                'Actuaciones' => $c->actuaciones
+                    ->sortBy('created_at')
+                    ->map(fn ($a) => ($a->usuario?->name ?? 'Sistema').': '.$a->titulo)
+                    ->implode(' | '),
+                'Satisfacción' => $c->encuesta?->puntuacion,
                 'Horas respuesta' => $horas,
             ];
         });

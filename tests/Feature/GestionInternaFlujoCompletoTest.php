@@ -50,6 +50,7 @@ class GestionInternaFlujoCompletoTest extends TestCase
             'solicitante_email' => 'ciudadano.ficticio@example.test',
             'medio_respuesta' => 'consulta_segura',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
             'consentimiento_comunicacion_email' => '1',
         ]);
         $response->assertRedirect(route('publico.confirmacion'));
@@ -85,7 +86,7 @@ class GestionInternaFlujoCompletoTest extends TestCase
                 ->get(route('pqrsd.index', ['estado_operativo' => 'pendiente_clasificacion']))
                 ->assertOk()
                 ->assertSee($radicado)
-                ->assertSee('Pendiente evaluación')
+                ->assertSee('Pendiente de clasificación')
                 ->assertSee('Consulta segura');
         }
 
@@ -254,6 +255,7 @@ class GestionInternaFlujoCompletoTest extends TestCase
             'es_anonimo' => '1',
             'medio_respuesta' => 'consulta_segura',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
         ])->assertRedirect();
 
         $caso = Pqrsd::latest('id')->firstOrFail();
@@ -268,6 +270,6 @@ class GestionInternaFlujoCompletoTest extends TestCase
             ->assertOk()
             ->assertSee($caso->radicado)
             ->assertSee('Anónimo')
-            ->assertSee('Pendiente evaluación');
+            ->assertSee('Pendiente de clasificación');
     }
 }

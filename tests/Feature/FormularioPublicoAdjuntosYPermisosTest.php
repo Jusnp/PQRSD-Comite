@@ -44,6 +44,7 @@ class FormularioPublicoAdjuntosYPermisosTest extends TestCase
             'asunto' => 'Asunto de prueba pública',
             'descripcion' => 'Descripción ficticia de prueba pública con longitud suficiente para validar.',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
             'paciente_fecha_nacimiento' => '2015-06-01',
         ], $extra);
     }

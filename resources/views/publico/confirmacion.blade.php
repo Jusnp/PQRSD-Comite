@@ -20,7 +20,7 @@
     @endif
     @if($caso?->medio_respuesta)
         <p><strong>Medio de respuesta elegido:</strong>
-            {{ config('pqrsd_publico.medios_respuesta.'.$caso->medio_respuesta, $caso->medio_respuesta) }}
+            {{ \App\Support\MedioRespuesta::etiqueta($caso->medio_respuesta) }}
         </p>
     @endif
     @if($caso?->es_anonimo)

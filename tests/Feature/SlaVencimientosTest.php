@@ -289,8 +289,85 @@ class SlaVencimientosTest extends TestCase
             ->first();
 
         $this->assertNotNull($notif);
-        $this->assertNotSame('omitida', $notif->estado);
-        $this->assertStringContainsString('admin-vital@menteplena.test', (string) $notif->destinatario);
-        $this->assertStringContainsString('aux-vital@menteplena.test', (string) $notif->destinatario);
+        $this->assertSame('omitida', $notif->estado);
+        $this->assertNull($notif->destinatario);
+        $this->assertLessThanOrEqual(255, mb_strlen((string) $notif->destinatario));
+        $ids = $notif->metadatos['destinatario_ids'] ?? [];
+        $this->assertContains($admin->id, $ids);
+        $this->assertContains($auxiliar->id, $ids);
+        $this->assertArrayNotHasKey('destinatarios', $notif->metadatos ?? []);
+        Mail::assertNothingSent();
+
+        app(\App\Services\SlaNotificationService::class)->notificarVitalInmediato($caso->fresh());
+        $this->assertSame(1, NotificacionPqrsd::query()->where('pqrsd_id', $caso->id)->where('tipo', 'vital_inmediato')->count());
+    }
+
+    public function test_varios_destinatarios_no_desbordan_la_columna_ni_duplican_al_repetir(): void
+    {
+        config(['pqrsd_sla.correo_alertas_habilitado' => false]);
+        foreach (range(1, 8) as $i) {
+            $usuario = User::factory()->create([
+                'activo' => true,
+                'email' => str_repeat('a', 30).$i.'@example.test',
+            ]);
+            $usuario->assignRole('auxiliar_pqrsd');
+        }
+
+        $recepcion = Carbon::parse('2026-10-01 08:00:00', 'America/Bogota');
+        Carbon::setTestNow($recepcion->copy()->addDays(20));
+        $caso = app(PqrsdService::class)->radicarManual([
+            'fecha_recepcion' => $recepcion,
+            'canal_ingreso_id' => $this->canal->id,
+            'nivel_riesgo' => 'ordinario',
+            'descripcion' => 'Caso vencido ficticio para alerta interna',
+            'es_anonimo' => 1,
+        ], $this->user);
+
+        app(\App\Services\SlaNotificationService::class)->evaluarRecordatorios($caso->fresh());
+        app(\App\Services\SlaNotificationService::class)->evaluarRecordatorios($caso->fresh());
+
+        $notif = NotificacionPqrsd::query()->where('pqrsd_id', $caso->id)->where('tipo', 'vencido')->first();
+        $this->assertNotNull($notif);
+        $this->assertNull($notif->destinatario);
+        $this->assertGreaterThan(1, $notif->metadatos['destinatarios_cantidad'] ?? 0);
+        $this->assertSame(1, NotificacionPqrsd::query()->where('pqrsd_id', $caso->id)->where('tipo', 'vencido')->count());
+        Mail::assertNothingSent();
+    }
+
+    public function test_proximos_responde_aunque_falle_guardar_la_alerta(): void
+    {
+        $recepcion = Carbon::parse('2026-10-20 08:00:00', 'America/Bogota');
+        Carbon::setTestNow($recepcion->copy()->addHours(70));
+        app(PqrsdService::class)->radicarManual([
+            'fecha_recepcion' => $recepcion,
+            'canal_ingreso_id' => $this->canal->id,
+            'nivel_riesgo' => 'simple',
+            'descripcion' => 'Próximo a vencer ficticio',
+            'es_anonimo' => 1,
+        ], $this->user);
+
+        $this->mock(\App\Services\SlaNotificationService::class, function ($mock) {
+            $mock->shouldReceive('evaluarRecordatorios')->andThrow(new \RuntimeException('fallo persistencia SQLSTATE persona@example.test'));
+        });
+
+        $this->actingAs($this->user)
+            ->get(route('vencimientos.proximos'))
+            ->assertOk()
+            ->assertDontSee('SQLSTATE')
+            ->assertDontSee('persona@example.test');
+    }
+
+    public function test_error_institucional_no_muestra_sql_ni_correos_sin_depuracion(): void
+    {
+        config(['app.debug' => false]);
+        \Illuminate\Support\Facades\Route::get('/__falla-interna-prueba', function () {
+            throw new \RuntimeException('SQLSTATE[22001] persona@example.test');
+        });
+
+        $this->get('/__falla-interna-prueba')
+            ->assertStatus(500)
+            ->assertSee('Error interno')
+            ->assertDontSee('SQLSTATE')
+            ->assertDontSee('persona@example.test');
     }
 }

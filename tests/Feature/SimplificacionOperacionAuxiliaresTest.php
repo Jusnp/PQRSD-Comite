@@ -69,7 +69,7 @@ class SimplificacionOperacionAuxiliaresTest extends TestCase
         $this->assertStringNotContainsString('Nueva radicación', $html);
         $this->assertStringNotContainsString('>Administración</summary>', $html);
         $this->assertStringContainsString('Bandeja de PQRSD', $html);
-        $this->assertStringContainsString('Indicadores PQRSD', $html);
+        $this->assertStringContainsString('Indicadores y reportes', $html);
         $this->assertStringContainsString('Mi perfil', $html);
     }
 
@@ -157,8 +157,8 @@ class SimplificacionOperacionAuxiliaresTest extends TestCase
         $auxiliar = User::where('email', 'auxiliar1@menteplena.test')->firstOrFail();
 
         $this->actingAs($auxiliar)->get(route('profile.edit'))->assertOk();
-        $this->actingAs($auxiliar)->get(route('reportes.indicadores'))->assertOk()->assertSee('Indicadores PQRSD', false);
-        $this->actingAs($auxiliar)->get(route('reportes.index'))->assertOk();
+        $this->actingAs($auxiliar)->get(route('reportes.indicadores'))->assertOk()->assertSee('Indicadores y reportes', false)->assertSee('Reportes y soportes', false);
+        $this->actingAs($auxiliar)->get(route('reportes.index'))->assertRedirect(route('reportes.indicadores'));
         $this->actingAs($auxiliar)->get(route('publico.qr'))->assertOk();
     }
 
@@ -183,6 +183,7 @@ class SimplificacionOperacionAuxiliaresTest extends TestCase
             'medio_respuesta' => 'email',
             'consentimiento_comunicacion_email' => '1',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
         ])->assertRedirect();
 
         $this->assertDatabaseHas('pqrsd', [

@@ -44,7 +44,7 @@ class IndicadoresPqrsdTest extends TestCase
             $this->actingAs($user)
                 ->get(route('reportes.indicadores'))
                 ->assertOk()
-                ->assertSee('Indicadores PQRSD', false)
+                ->assertSee('Indicadores y reportes', false)
                 ->assertSee('Bandeja de PQRSD', false)
                 ->assertDontSee('Dashboard PQRSD', false);
             $this->post('/logout');

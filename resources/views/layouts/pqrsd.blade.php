@@ -35,8 +35,7 @@
             <a href="{{ route('vencimientos.proximos') }}" @if(request()->routeIs('vencimientos.*')) aria-current="page" @endif>Vencimientos</a>
         @endcan
         @can('reportes.view')
-            <a href="{{ route('reportes.indicadores') }}" @if(request()->routeIs('reportes.indicadores*')) aria-current="page" @endif>Indicadores PQRSD</a>
-            <a href="{{ route('reportes.index') }}" @if(request()->routeIs('reportes.index')) aria-current="page" @endif>Reportes</a>
+            <a href="{{ route('reportes.indicadores') }}" @if(request()->routeIs('reportes.*')) aria-current="page" @endif>Indicadores y reportes</a>
         @endcan
         @can('pqrsd.view')
             <a href="{{ route('publico.qr') }}" @if(request()->routeIs('publico.qr*')) aria-current="page" @endif>Formulario público / Código QR</a>
@@ -44,7 +43,7 @@
         <a href="{{ route('profile.edit') }}" @if(request()->routeIs('profile.*')) aria-current="page" @endif>Mi perfil</a>
 
         @canany(['usuarios.manage','correos.manage','sedes.manage','aseguradoras.manage','canales.manage','tipos.manage','motivos.manage','areas.manage','reglas_sla.manage','pqrsd.create_manual'])
-        <details class="nav-admin-group" @if(request()->routeIs(['usuarios.*','sedes.*','aseguradoras.*','canales.*','tipos.*','motivos.*','areas.*','reglas.*','cuentas-correo.*','ops.*','pqrsd.create'])) open @endif>
+        <details class="nav-admin-group" @if(request()->routeIs(['usuarios.*','sedes.*','aseguradoras.*','canales.*','tipos.*','motivos.*','categorias.*','areas.*','reglas.*','cuentas-correo.*','ops.*','pqrsd.create'])) open @endif>
             <summary>Administración</summary>
             @can('pqrsd.create_manual')
                 <p class="nav-admin-label">Radicación manual</p>
@@ -67,6 +66,7 @@
             @endcan
             @can('motivos.manage')
                 <a href="{{ route('motivos.index') }}" @if(request()->routeIs('motivos.*')) aria-current="page" @endif>Motivos</a>
+                <a href="{{ route('categorias.index') }}" @if(request()->routeIs('categorias.*')) aria-current="page" @endif>Categorías</a>
             @endcan
             @can('areas.manage')
                 <a href="{{ route('areas.index') }}" @if(request()->routeIs('areas.*')) aria-current="page" @endif>Áreas internas</a>
@@ -139,8 +139,7 @@
                 <a href="{{ route('vencimientos.proximos') }}" class="{{ request()->routeIs('vencimientos.*') ? 'is-active' : '' }}">Vencimientos</a>
             @endcan
             @can('reportes.view')
-                <a href="{{ route('reportes.indicadores') }}" class="{{ request()->routeIs('reportes.indicadores*') ? 'is-active' : '' }}">Indicadores</a>
-                <a href="{{ route('reportes.index') }}" class="{{ request()->routeIs('reportes.index') ? 'is-active' : '' }}">Reportes</a>
+                <a href="{{ route('reportes.indicadores') }}" class="{{ request()->routeIs('reportes.*') ? 'is-active' : '' }}">Indicadores y reportes</a>
             @endcan
             @can('pqrsd.view')
                 <a href="{{ route('publico.qr') }}" class="{{ request()->routeIs('publico.qr*') ? 'is-active' : '' }}">Formulario público / Código QR</a>

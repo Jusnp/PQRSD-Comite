@@ -45,6 +45,7 @@ class RemisionesInternasTest extends TestCase
             'solicitante_email' => 'paciente.remision@example.test',
             'medio_respuesta' => 'consulta_segura',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
             'consentimiento_comunicacion_email' => '1',
         ])->assertRedirect(route('publico.confirmacion'));
 
@@ -136,6 +137,7 @@ class RemisionesInternasTest extends TestCase
             'solicitante_email' => 'remision.historica@example.test',
             'medio_respuesta' => 'consulta_segura',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
             'consentimiento_comunicacion_email' => '1',
         ])->assertRedirect(route('publico.confirmacion'));
 

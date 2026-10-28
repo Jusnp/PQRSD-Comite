@@ -23,13 +23,17 @@ class DashboardController extends Controller
         $indicadores = $this->reportes->indicadores(clone $query);
         $base = $this->scopedPqrsd();
 
+        $casosPanel = (clone $base)->with('encuesta')->get();
+        $vigente = $casosPanel->countBy(fn (Pqrsd $c) => $c->cumplimientoVigente());
+        $operativo = app(\App\Services\IndicadoresPqrsdService::class)->resumenOperativo($casosPanel);
+
         $stats = [
             'total' => (clone $base)->count(),
             'hoy' => (clone $base)->whereDate('fecha_radicacion', now('America/Bogota')->toDateString())->count(),
             'abiertos' => (clone $base)->whereNotIn('estado_operativo', ['cerrado'])->count(),
             'en_gestion' => (clone $base)->where('estado_operativo', 'en_gestion')->count(),
-            'vencidos' => (clone $base)->where('estado_cumplimiento', 'vencido')->count(),
-            'proximos' => (clone $base)->where('estado_cumplimiento', 'proximo_vencer')->count(),
+            'vencidos' => (int) ($vigente['vencido'] ?? 0),
+            'proximos' => (int) ($vigente['proximo_vencer'] ?? 0),
             'oportunos' => (clone $base)->where('estado_cumplimiento', 'resuelto_oportuno')->count(),
             'extemporaneos' => (clone $base)->where('estado_cumplimiento', 'resuelto_extemporaneo')->count(),
             'vitales' => (clone $base)->whereIn('nivel_riesgo', ['vital_menor', 'vital_general'])->count(),
@@ -39,6 +43,9 @@ class DashboardController extends Controller
                 ? MensajeCorreo::pendientesRevision()->count()
                 : 0,
             'tiempo_promedio_horas' => $indicadores['tiempo_promedio_horas'],
+            'satisfaccion_promedio' => $operativo['satisfaccion_promedio'],
+            'tasa_participacion' => $operativo['tasa_participacion'],
+            'alertas_vitales_preventivas' => $operativo['alertas_vitales_preventivas'],
         ];
 
         $alertas = [

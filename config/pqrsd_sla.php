@@ -31,6 +31,13 @@ return [
     'notificar_vital_inmediato' => true,
 
     /*
+    | El correo de alertas SLA permanece apagado hasta Google Workspace.
+    | Con false se guarda un aviso interno, un destinatario como máximo
+    | y la lista de usuarios en metadatos. No se concatenan correos.
+    */
+    'correo_alertas_habilitado' => (bool) env('PQRSD_SLA_CORREO_ALERTAS', false),
+
+    /*
     | Destinatarios de alertas vitales / recordatorios SLA.
     | Debe alinearse con roles operativos reales (admin + auxiliar_pqrsd).
     | Roles legacy se conservan por compatibilidad si aún existen usuarios activos.

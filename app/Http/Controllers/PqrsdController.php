@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\ActuacionPqrsd;
 use App\Models\Aseguradora;
 use App\Models\CanalIngreso;
+use App\Models\CategoriaPqrsd;
 use App\Models\MotivoPqrsd;
+use App\Models\SubcategoriaPqrsd;
 use App\Models\Pqrsd;
 use App\Models\Sede;
 use App\Models\TipoPqrsd;
@@ -26,7 +28,7 @@ class PqrsdController extends Controller
         private readonly AdjuntoPqrsdService $adjuntoPqrsdService,
     ) {}
 
-    public function index(Request $request): View
+    public function index(Request $request): View|RedirectResponse
     {
         $this->authorize('viewAny', Pqrsd::class);
 
@@ -54,6 +56,36 @@ class PqrsdController extends Controller
                 $builder->where('radicado', 'like', "%{$q}%")
                     ->orWhere('solicitante_nombre', 'like', "%{$q}%")
                     ->orWhere('paciente_nombre', 'like', "%{$q}%");
+            });
+        }
+
+        if ($request->filled('documento')) {
+            $numero = preg_replace('/\D+/', '', (string) $request->string('documento')) ?? '';
+            if ($numero === '') {
+                return back()->withErrors(['documento' => 'Ingrese el número de documento, sin letras.']);
+            }
+            $tipoDoc = $request->filled('tipo_documento') ? (string) $request->string('tipo_documento') : null;
+            $query->where(function ($builder) use ($numero, $tipoDoc) {
+                foreach (['solicitante', 'paciente'] as $quien) {
+                    $builder->orWhere(function ($inner) use ($quien, $numero, $tipoDoc) {
+                        $columna = $quien.'_documento';
+                        $inner->whereRaw(
+                            "REPLACE(REPLACE(REPLACE({$columna}, ' ', ''), '-', ''), '.', '') = ?",
+                            [$numero]
+                        );
+                        if ($tipoDoc) {
+                            $inner->where($quien.'_tipo_documento', $tipoDoc);
+                        }
+                    });
+                }
+            });
+        }
+
+        if ($request->string('clasificacion') === 'sin_clasificar') {
+            $query->where(function ($builder) {
+                $builder->where('nivel_riesgo', 'pendiente')
+                    ->orWhere('ciudadano_no_clasifica', true)
+                    ->orWhere('estado_operativo', 'pendiente_clasificacion');
             });
         }
 
@@ -122,13 +154,22 @@ class PqrsdController extends Controller
             'radicado' => $query->orderBy('radicado', $dir),
             default => $query
                 ->orderByRaw("CASE
-                    WHEN estado_cumplimiento = 'vencido' THEN 0
-                    WHEN estado_cumplimiento = 'proximo_vencer' THEN 1
-                    WHEN estado_operativo = 'pendiente_clasificacion' OR nivel_riesgo = 'pendiente' OR estado_cumplimiento = 'sin_clasificar' THEN 2
-                    WHEN nivel_riesgo IN ('vital_menor', 'vital_general') THEN 3
-                    WHEN estado_operativo IN ('asignado', 'en_gestion', 'radicado') THEN 4
-                    ELSE 5
+                    WHEN alerta_vital_preventiva = 1 AND nivel_riesgo = 'pendiente' THEN 0
+                    WHEN estado_cumplimiento = 'vencido' THEN 1
+                    WHEN estado_cumplimiento = 'proximo_vencer' THEN 2
+                    WHEN estado_operativo = 'pendiente_clasificacion' OR nivel_riesgo = 'pendiente' OR estado_cumplimiento = 'sin_clasificar' OR ciudadano_no_clasifica = 1 THEN 3
+                    WHEN nivel_riesgo IN ('vital_menor', 'vital_general') THEN 4
+                    WHEN estado_operativo IN ('asignado', 'en_gestion', 'radicado') THEN 5
+                    ELSE 6
                 END")
+                ->orderByRaw("CASE
+                    WHEN (alerta_vital_preventiva = 1 AND nivel_riesgo = 'pendiente')
+                        OR estado_operativo = 'pendiente_clasificacion'
+                        OR nivel_riesgo = 'pendiente'
+                        OR ciudadano_no_clasifica = 1
+                    THEN fecha_recepcion
+                    ELSE NULL
+                END ASC")
                 ->orderBy('fecha_limite')
                 ->orderByDesc('fecha_recepcion'),
         };
@@ -147,6 +188,8 @@ class PqrsdController extends Controller
             || $request->filled('estado_cumplimiento')
             || $request->filled('es_anonimo')
             || $request->filled('medio_respuesta')
+            || $request->filled('documento')
+            || $request->filled('clasificacion')
             || $request->boolean('avanzados');
 
         return view('pqrsd.index', [
@@ -156,7 +199,18 @@ class PqrsdController extends Controller
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
             'motivos' => $motivosQuery->get(),
             'canales' => CanalIngreso::where('activo', true)->orderBy('nombre')->get(),
-            'mediosRespuesta' => config('pqrsd_publico.medios_respuesta', []),
+            'mediosRespuesta' => \App\Support\MedioRespuesta::paraConsulta(),
+            'tiposDocumento' => config('pqrsd_publico.tipos_documento', []),
+            'resumen' => app(\App\Services\IndicadoresPqrsdService::class)->resumenOperativo(
+                Pqrsd::query()->when(! Auth::user()->can('pqrsd.view_all'), function ($q) {
+                    $uid = Auth::id();
+                    $q->where(function ($inner) use ($uid) {
+                        $inner->where('responsable_id', $uid)
+                            ->orWhere('creado_por', $uid)
+                            ->orWhere('radicado_por', $uid);
+                    });
+                })->with('encuesta')->get()
+            ),
             'sort' => $sort,
             'dir' => $dir,
             'avanzadosAbiertos' => $avanzadosAbiertos,
@@ -243,6 +297,8 @@ class PqrsdController extends Controller
             'plazo' => $plazo,
             'notificaciones' => $notificaciones,
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
+            'categorias' => CategoriaPqrsd::with('subcategorias')->where('activo', true)->orderBy('orden')->get(),
+            'motivos' => MotivoPqrsd::with('subcategoriaSugerida.categoria')->where('activo', true)->orderBy('nombre')->get(),
             'areas' => \App\Models\AreaInstitucional::where('activo', true)->orderBy('orden')->orderBy('nombre')->get(),
         ]);
     }
@@ -254,10 +310,23 @@ class PqrsdController extends Controller
         $data = $request->validate([
             'nivel_riesgo' => ['required', 'in:vital_menor,vital_general,priorizado,simple,ordinario'],
             'tipo_pqrsd_id' => ['nullable', 'exists:tipos_pqrsd,id'],
+            'categoria_pqrsd_id' => ['nullable', 'exists:categorias_pqrsd,id'],
+            'subcategoria_pqrsd_id' => ['nullable', 'exists:subcategorias_pqrsd,id'],
+            'motivo_pqrsd_id' => ['nullable', 'exists:motivos_pqrsd,id'],
             'justificacion' => ['required', 'string', 'min:10', 'max:1000'],
             'forzar_recalculo' => ['sometimes', 'boolean'],
             'expediente_version' => ['required', 'string', 'size:64', 'regex:/^[a-f0-9]{64}$/i'],
         ]);
+
+        if (! empty($data['subcategoria_pqrsd_id']) && ! empty($data['categoria_pqrsd_id'])) {
+            $pertenece = SubcategoriaPqrsd::query()
+                ->whereKey($data['subcategoria_pqrsd_id'])
+                ->where('categoria_pqrsd_id', $data['categoria_pqrsd_id'])
+                ->exists();
+            if (! $pertenece) {
+                return back()->withErrors(['subcategoria_pqrsd_id' => 'La subcategoría no pertenece a la categoría elegida.'])->withInput();
+            }
+        }
 
         try {
             $this->vencimientoService->aplicarClasificacion(
@@ -272,15 +341,22 @@ class PqrsdController extends Controller
 
             $pqrsd->refresh();
 
-            if (! empty($data['tipo_pqrsd_id'])) {
+            foreach (['tipo_pqrsd_id', 'categoria_pqrsd_id', 'subcategoria_pqrsd_id', 'motivo_pqrsd_id'] as $campo) {
+                if (! array_key_exists($campo, $data) || $data[$campo] === null || $data[$campo] === '') {
+                    continue;
+                }
                 $this->pqrsdService->registrarCambioEstado(
                     $pqrsd->fresh(),
                     Auth::user(),
-                    'tipo_pqrsd_id',
-                    (string) $data['tipo_pqrsd_id'],
+                    $campo,
+                    (string) $data[$campo],
                     $data['justificacion']
                 );
                 $pqrsd->refresh();
+            }
+
+            if ($pqrsd->ciudadano_no_clasifica && $pqrsd->nivel_riesgo !== 'pendiente' && filled($pqrsd->tipo_pqrsd_id)) {
+                $pqrsd->update(['ciudadano_no_clasifica' => false]);
             }
 
             if ($pqrsd->estado_operativo === 'pendiente_clasificacion') {

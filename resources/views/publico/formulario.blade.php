@@ -42,8 +42,8 @@
                     <span>Deseo presentar esta solicitud sin revelar mi identidad.</span>
                 </label>
                 <p class="form-help" id="texto-anonimo" hidden>
-                    Puede presentar su solicitud sin revelar su identidad. Puede indicar un medio de contacto para recibir la respuesta.
-                    El anonimato aplica especialmente a quejas y denuncias; otros tipos quedan sujetos a validación institucional.
+                    Puede presentar su solicitud sin revelar su identidad. El anonimato aplica especialmente a quejas y denuncias; otros tipos quedan sujetos a validación institucional.
+                    En esta modalidad no se almacena el teléfono, aunque se envíe.
                 </p>
             </div>
         </div>
@@ -83,10 +83,11 @@
                 @error('relacion_paciente')<div class="field-error">{{ $message }}</div>@enderror
             </div>
             <div>
-                <label class="form-label" for="solicitante_telefono">Teléfono (complementario)</label>
-                <input class="form-input @error('solicitante_telefono') is-invalid @enderror" id="solicitante_telefono" name="solicitante_telefono" value="{{ old('solicitante_telefono') }}" autocomplete="tel" inputmode="tel" placeholder="Ej. 3001234567">
+                <label class="form-label" for="solicitante_telefono">Teléfono <span class="required phone-req">*</span></label>
+                <input class="form-input @error('solicitante_telefono') is-invalid @enderror" id="solicitante_telefono" name="solicitante_telefono" value="{{ old('solicitante_telefono') }}" autocomplete="tel" inputmode="tel" placeholder="Ej. 3001234567 o 6041234567" @unless(old('es_anonimo')) required @endunless>
                 @error('solicitante_telefono')<div class="field-error">{{ $message }}</div>@enderror
-                <div class="form-help">Solo números y símbolos telefónicos. No se enviará información clínica sensible por SMS.</div>
+                <div class="form-help" id="ayuda-telefono">Obligatorio si la solicitud no es anónima. Acepta móvil y fijo de Colombia.</div>
+                <div class="form-help" id="ayuda-telefono-anonimo" hidden>No se almacenará un teléfono en una radicación anónima.</div>
             </div>
         </div>
     </fieldset>
@@ -176,7 +177,7 @@
         <legend>D. Manifestación</legend>
         <div class="form-grid">
             <div>
-                <label class="form-label" for="tipo_pqrsd_id">Tipo de solicitud <span class="required">*</span></label>
+                <label class="form-label" for="tipo_pqrsd_id">Tipo de solicitud <span class="required tipo-req">*</span></label>
                 <select class="form-select @error('tipo_pqrsd_id') is-invalid @enderror" id="tipo_pqrsd_id" name="tipo_pqrsd_id" required>
                     <option value="">Seleccione</option>
                     @foreach($tipos as $tipo)
@@ -184,7 +185,11 @@
                     @endforeach
                 </select>
                 @error('tipo_pqrsd_id')<div class="field-error">{{ $message }}</div>@enderror
-                <div class="form-help">El riesgo clínico lo clasifica el personal autorizado. Este formulario no modifica reglas SLA.</div>
+                <div class="form-help">El riesgo clínico lo clasifica el personal autorizado. Elegir un tipo no define el riesgo ni modifica el SLA.</div>
+                <label class="opcion-radio" style="margin-top:10px">
+                    <input type="checkbox" name="ciudadano_no_clasifica" value="1" id="ciudadano_no_clasifica" @checked(old('ciudadano_no_clasifica'))>
+                    <span>No sé cómo clasificar mi solicitud</span>
+                </label>
             </div>
             <div>
                 <label class="form-label" for="asunto">Asunto <span class="required">*</span></label>
@@ -194,6 +199,16 @@
             <div>
                 <label class="form-label" for="fecha_hechos">Fecha de los hechos (si se conoce)</label>
                 <input class="form-input" id="fecha_hechos" type="date" name="fecha_hechos" max="{{ now('America/Bogota')->toDateString() }}" value="{{ old('fecha_hechos') }}">
+            </div>
+            <div class="full">
+                <label class="form-label" for="motivo_pqrsd_id">Motivo, si lo conoce</label>
+                <select class="form-select" id="motivo_pqrsd_id" name="motivo_pqrsd_id">
+                    <option value="">No estoy seguro</option>
+                    @foreach($motivos as $motivo)
+                        <option value="{{ $motivo->id }}" data-sugerencia="{{ $motivo->subcategoriaSugerida ? $motivo->subcategoriaSugerida->categoria?->nombre.' → '.$motivo->subcategoriaSugerida->nombre : '' }}" @selected(old('motivo_pqrsd_id') == $motivo->id)>{{ $motivo->nombre }}</option>
+                    @endforeach
+                </select>
+                <p class="form-help" id="sugerencia-categoria" hidden></p>
             </div>
             <div class="full">
                 <label class="form-label" for="descripcion">Descripción de lo sucedido <span class="required">*</span></label>
@@ -215,7 +230,7 @@
                     @endforeach
                 </select>
                 @error('medio_respuesta')<div class="field-error">{{ $message }}</div>@enderror
-                <div class="form-help">Este medio aplica a toda la solicitud. El teléfono es solo complementario.</div>
+                <div class="form-help">Este medio aplica a toda la solicitud.</div>
             </div>
             <div id="bloque-email" class="full" hidden>
                 <label class="form-label" for="solicitante_email">Correo electrónico <span class="required">*</span></label>
@@ -227,10 +242,12 @@
                 </label>
                 @error('consentimiento_comunicacion_email')<div class="field-error">{{ $message }}</div>@enderror
             </div>
-            <div id="bloque-direccion" class="full" hidden>
-                <label class="form-label" for="solicitante_direccion">Dirección de correspondencia física <span class="required">*</span></label>
-                <input class="form-input @error('solicitante_direccion') is-invalid @enderror" id="solicitante_direccion" name="solicitante_direccion" value="{{ old('solicitante_direccion') }}" maxlength="500">
-                @error('solicitante_direccion')<div class="field-error">{{ $message }}</div>@enderror
+            <div id="bloque-telefono" class="full" hidden>
+                <p class="form-help" style="margin:0">
+                    Se usará el teléfono indicado en sus datos. La respuesta escrita queda en el expediente
+                    y puede consultarse en el portal. Una llamada no se registra como realizada si no hay evidencia.
+                    Usar el teléfono como notificación formal está pendiente de validación jurídica.
+                </p>
             </div>
             <div id="bloque-consulta-segura" class="full" hidden>
                 <p class="form-help" style="margin:0">
@@ -258,11 +275,37 @@
 
     <fieldset class="form-section">
         <legend>Tratamiento de datos</legend>
-        <label style="display:flex;gap:8px;align-items:flex-start;font-weight:700">
-            <input type="checkbox" name="acepto_tratamiento_datos" value="1" required @checked(old('acepto_tratamiento_datos'))>
-            <span>{{ config('identidad.textos.tratamiento_datos') }} <span class="required">*</span></span>
-        </label>
-        @error('acepto_tratamiento_datos')<div class="field-error">{{ $message }}</div>@enderror
+        @php
+            $politicaUrl = trim((string) config('identidad.politica_tratamiento_url'));
+            $politicaVersion = trim((string) config('identidad.politica_tratamiento_version'));
+            $politicaPublicada = $politicaUrl !== '' && $politicaVersion !== '';
+        @endphp
+        @if($politicaPublicada)
+            <div id="bloque-autorizacion-identificada">
+                <label style="display:flex;gap:8px;align-items:flex-start;font-weight:700">
+                    <input type="checkbox" id="acepto_tratamiento_datos" name="acepto_tratamiento_datos" value="1" @checked(old('acepto_tratamiento_datos'))>
+                    <span>{{ config('identidad.textos.tratamiento_datos') }} <span class="required">*</span></span>
+                </label>
+                @error('acepto_tratamiento_datos')<div class="field-error">{{ $message }}</div>@enderror
+                <p class="form-help">
+                    Documento {{ config('identidad.politica_tratamiento_codigo') ?: 'institucional' }},
+                    versión {{ $politicaVersion }}@if(config('identidad.politica_tratamiento_fecha')), del {{ config('identidad.politica_tratamiento_fecha') }}@endif.
+                    Los datos de salud que usted escriba son sensibles. Esta pantalla usa la política general del Comité
+                    y no una política inventada solo para PQRSD. Su aplicación a datos de salud sigue pendiente de precisión jurídica.
+                </p>
+            </div>
+            <p id="aviso-autorizacion-anonima" class="form-help" hidden>
+                En una radicación anónima no se guarda una autorización de datos identificados ni un teléfono.
+                La solicitud no se bloquea por esa autorización. El tratamiento del anonimato y de los datos de salud
+                queda sujeto a validación jurídica.
+            </p>
+        @else
+            <p class="form-help">
+                La autorización expresa queda pendiente: no hay una política oficial publicada con URL y versión.
+                La radicación continúa y el sistema no registrará que usted aceptó un documento que no pudo consultar.
+            </p>
+        @endif
+        <div style="margin-top:10px">@include('partials.politica-datos')</div>
     </fieldset>
 
     {{-- Campos canónicos sincronizados por JS (sede/aseguradora/servicio/fecha) --}}
@@ -298,7 +341,7 @@
     const textoAnon = document.getElementById('texto-anonimo');
     const medio = document.getElementById('medio_respuesta');
     const bloqueEmail = document.getElementById('bloque-email');
-    const bloqueDir = document.getElementById('bloque-direccion');
+    const bloqueTelefono = document.getElementById('bloque-telefono');
     const bloqueConsulta = document.getElementById('bloque-consulta-segura');
     const input = document.getElementById('adjuntos');
     const lista = document.getElementById('adjuntos-lista');
@@ -335,13 +378,58 @@
             // No borrar valores al alternar: solo ocultar y quitar required visual.
         });
         document.querySelectorAll('.ident-req').forEach(el => { el.hidden = on; });
+        const tel = document.getElementById('solicitante_telefono');
+        const ayudaTel = document.getElementById('ayuda-telefono');
+        const ayudaTelAnon = document.getElementById('ayuda-telefono-anonimo');
+        document.querySelectorAll('.phone-req').forEach(el => { el.hidden = on; });
+        if (ayudaTel) ayudaTel.hidden = on;
+        if (ayudaTelAnon) ayudaTelAnon.hidden = !on;
+        if (tel) {
+            tel.required = !on;
+            tel.disabled = on;
+            if (on) tel.value = '';
+        }
+        const autorizacion = document.getElementById('bloque-autorizacion-identificada');
+        const avisoAnonimo = document.getElementById('aviso-autorizacion-anonima');
+        const casilla = document.getElementById('acepto_tratamiento_datos');
+        if (autorizacion) autorizacion.hidden = on;
+        if (avisoAnonimo) avisoAnonimo.hidden = !on;
+        if (casilla) {
+            casilla.required = !on;
+            casilla.disabled = on;
+            if (on) casilla.checked = false;
+        }
+        syncMedio();
+    }
+
+    function syncClasificacion() {
+        const noSe = document.getElementById('ciudadano_no_clasifica');
+        const tipo = document.getElementById('tipo_pqrsd_id');
+        if (tipo && noSe) {
+            tipo.required = !noSe.checked;
+            tipo.disabled = noSe.checked;
+            document.querySelectorAll('.tipo-req').forEach(el => { el.hidden = noSe.checked; });
+        }
+        const motivo = document.getElementById('motivo_pqrsd_id');
+        const ayuda = document.getElementById('sugerencia-categoria');
+        const sugerida = motivo?.selectedOptions?.[0]?.dataset?.sugerencia || '';
+        if (ayuda) {
+            ayuda.hidden = sugerida === '';
+            ayuda.textContent = sugerida ? 'Categoría sugerida, sujeta a confirmación del personal: '+sugerida : '';
+        }
     }
 
     function syncMedio() {
+        const anonimo = !!anon?.checked;
+        const opcionTelefono = medio?.querySelector('option[value="telefono"]');
+        if (opcionTelefono) {
+            opcionTelefono.disabled = anonimo;
+            if (anonimo && medio.value === 'telefono') medio.value = '';
+        }
         const v = medio?.value || '';
-        bloqueEmail.hidden = v !== 'email';
-        bloqueDir.hidden = v !== 'correspondencia';
-        bloqueConsulta.hidden = v !== 'consulta_segura';
+        if (bloqueEmail) bloqueEmail.hidden = v !== 'email';
+        if (bloqueTelefono) bloqueTelefono.hidden = v !== 'telefono';
+        if (bloqueConsulta) bloqueConsulta.hidden = v !== 'consulta_segura';
     }
 
     function syncContextoCampos() {
@@ -368,9 +456,12 @@
     document.querySelectorAll('input[name="quien_radica"]').forEach(r => r.addEventListener('change', syncQuien));
     anon?.addEventListener('change', syncIdentidad);
     medio?.addEventListener('change', syncMedio);
+    document.getElementById('ciudadano_no_clasifica')?.addEventListener('change', syncClasificacion);
+    document.getElementById('motivo_pqrsd_id')?.addEventListener('change', syncClasificacion);
     syncQuien();
     syncIdentidad();
     syncMedio();
+    syncClasificacion();
 
     function formatSize(n) {
         if (n < 1024) return n + ' B';

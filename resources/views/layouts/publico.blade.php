@@ -53,6 +53,9 @@
     @endif
     @yield('content')
 </main>
+<footer class="app-main" style="padding-top:0">
+    @include('partials.politica-datos')
+</footer>
 @include('partials.theme-toggle-script')
 @include('partials.pqrsd-dialogo')
 @stack('scripts')

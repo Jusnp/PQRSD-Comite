@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Pqrsd;
 use App\Models\ReglaSla;
 use App\Models\TipoPqrsd;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -21,44 +22,83 @@ use Illuminate\Support\Facades\Auth;
  */
 class IndicadoresPqrsdService
 {
+    /** @var list<string> */
+    public const NIVELES_RIESGO = [
+        'vital_menor', 'vital_general', 'priorizado', 'simple', 'ordinario', 'pendiente',
+    ];
+
+    /** @var list<string> */
+    public const ESTADOS_CUMPLIMIENTO = [
+        'dentro_plazo', 'proximo_vencer', 'vencido', 'resuelto_oportuno', 'resuelto_extemporaneo', 'sin_clasificar',
+    ];
+
     public function filtrarCohorteRecepcion(Request $request): Builder
     {
-        $query = Pqrsd::query()->with(['tipo', 'sede', 'aseguradora', 'reglaSla']);
-
-        $user = Auth::user();
-        if ($user && ! $user->can('pqrsd.view_all')) {
-            $uid = $user->id;
-            $query->where(function ($q) use ($uid) {
-                $q->where('responsable_id', $uid)
-                    ->orWhere('creado_por', $uid)
-                    ->orWhere('radicado_por', $uid);
-            });
-        }
-
-        if ($request->filled('anio') && $request->input('anio') !== 'todos') {
-            $query->whereYear('fecha_recepcion', (int) $request->input('anio'));
-        }
-        if ($request->filled('mes') && $request->input('mes') !== 'todos') {
-            $query->whereMonth('fecha_recepcion', (int) $request->input('mes'));
-        }
-        if ($request->filled('sede_id') && $request->input('sede_id') !== 'todos') {
-            $query->where('sede_id', (int) $request->input('sede_id'));
-        }
-        if ($request->filled('aseguradora_id') && $request->input('aseguradora_id') !== 'todos') {
-            $query->where('aseguradora_id', (int) $request->input('aseguradora_id'));
-        }
-        if ($request->filled('tipo_pqrsd_id') && $request->input('tipo_pqrsd_id') !== 'todos') {
-            $query->where('tipo_pqrsd_id', (int) $request->input('tipo_pqrsd_id'));
-        }
-        if ($request->filled('motivo_pqrsd_id') && $request->input('motivo_pqrsd_id') !== 'todos') {
-            if ($request->input('motivo_pqrsd_id') === 'sin_motivo') {
-                $query->whereNull('motivo_pqrsd_id');
-            } else {
-                $query->where('motivo_pqrsd_id', (int) $request->input('motivo_pqrsd_id'));
-            }
-        }
+        $query = Pqrsd::query()->with(['tipo', 'sede', 'aseguradora', 'reglaSla', 'categoria', 'subcategoria', 'encuesta']);
+        $this->aplicarFiltrosCohorte($query, $request);
 
         return $query;
+    }
+
+    /**
+     * Misma cohorte para indicadores, listado y exportaciones.
+     * Año, mes y el rango desde/hasta usan la fecha de recepción.
+     */
+    public function aplicarFiltrosCohorte(Builder $query, Request $request): void
+    {
+        $this->aplicarVisibilidad($query);
+        $this->aplicarPeriodoRecepcion($query, $request);
+        $this->aplicarAtributos($query, $request);
+    }
+
+    /**
+     * @return array{consulta: array<string, mixed>, errores: array<string, string>, solicitud: Request}
+     */
+    public function depurarSolicitud(Request $request): array
+    {
+        $datos = $request->query();
+        $errores = [];
+
+        $desde = $this->fechaRecepcion($datos['desde'] ?? null);
+        $hasta = $this->fechaRecepcion($datos['hasta'] ?? null);
+        if ($this->vino($datos['desde'] ?? null) && $desde === null) {
+            $errores['desde'] = 'La fecha desde no es válida. Use AAAA-MM-DD. Ese valor no se aplicó.';
+            unset($datos['desde']);
+        }
+        if ($this->vino($datos['hasta'] ?? null) && $hasta === null) {
+            $errores['hasta'] = 'La fecha hasta no es válida. Use AAAA-MM-DD. Ese valor no se aplicó.';
+            unset($datos['hasta']);
+        }
+        if ($desde !== null && $hasta !== null && $desde > $hasta && ! isset($errores['desde']) && ! isset($errores['hasta'])) {
+            $errores['hasta'] = 'La fecha hasta es anterior a la fecha desde. El rango no se aplicó.';
+            unset($datos['desde'], $datos['hasta']);
+        }
+
+        $riesgo = $datos['nivel_riesgo'] ?? null;
+        if ($this->vino($riesgo) && ! in_array((string) $riesgo, self::NIVELES_RIESGO, true)) {
+            $errores['nivel_riesgo'] = 'El nivel de riesgo no corresponde al catálogo. No se aplicó.';
+            unset($datos['nivel_riesgo']);
+        }
+
+        $cumplimiento = $datos['estado_cumplimiento'] ?? null;
+        if ($this->vino($cumplimiento) && ! in_array((string) $cumplimiento, self::ESTADOS_CUMPLIMIENTO, true)) {
+            $errores['estado_cumplimiento'] = 'El estado de cumplimiento no es válido. No se aplicó.';
+            unset($datos['estado_cumplimiento']);
+        }
+
+        $responsable = $datos['responsable_id'] ?? null;
+        if ($this->vino($responsable) && (! ctype_digit((string) $responsable) || ! User::query()->whereKey((int) $responsable)->exists())) {
+            $errores['responsable_id'] = 'Ese responsable no está registrado. El filtro no se aplicó.';
+            unset($datos['responsable_id']);
+        }
+
+        unset($datos['page']);
+
+        return [
+            'consulta' => $datos,
+            'errores' => $errores,
+            'solicitud' => new Request($datos),
+        ];
     }
 
     /**
@@ -91,6 +131,17 @@ class IndicadoresPqrsdService
             'barras' => $barras,
             'evolucion_oportunidad' => $evolucion,
             'volumen_por_respuesta' => $volumenRespuesta,
+            'por_categoria' => $this->conteoEtiqueta($casos, fn (Pqrsd $c) => $c->categoria?->nombre ?? 'Sin categoría'),
+            'por_subcategoria' => $this->conteoEtiqueta(
+                $casos,
+                fn (Pqrsd $c) => ($c->categoria?->nombre ?? 'Sin categoría').' / '.($c->subcategoria?->nombre ?? 'Sin subcategoría')
+            ),
+            'vencidos_por_sede' => $this->conteoEtiqueta(
+                $casos->filter(fn (Pqrsd $c) => $c->cumplimientoVigente() === 'vencido'),
+                fn (Pqrsd $c) => $c->sede?->nombre ?? 'Sin sede'
+            ),
+            'satisfaccion_por_sede' => $this->promedioEncuesta($casos, fn (Pqrsd $c) => $c->sede?->nombre ?? 'Sin sede'),
+            'satisfaccion_por_tipo' => $this->promedioEncuesta($casos, fn (Pqrsd $c) => $c->tipo?->nombre ?? 'Sin tipo'),
             'tabla' => array_values(array_merge($porRiesgo, $porTipo)),
             'filtros' => $this->normalizarFiltros($request),
         ];
@@ -174,7 +225,85 @@ class IndicadoresPqrsdService
             'tiempo_promedio_legible' => $promedioSegundos !== null
                 ? $this->formatearDuracion((int) round($promedioSegundos))
                 : null,
+        ] + $this->bloqueAdministrativo($casos);
+    }
+
+    /**
+     * Conteos vivos. Próximos y vencidos salen de la fecha límite y el momento actual.
+     *
+     * @param  Collection<int, Pqrsd>  $casos
+     * @return array<string, mixed>
+     */
+    public function resumenOperativo(Collection $casos): array
+    {
+        return $this->bloqueAdministrativo($casos);
+    }
+
+    /**
+     * @param  Collection<int, Pqrsd>  $casos
+     * @return array<string, mixed>
+     */
+    private function bloqueAdministrativo(Collection $casos): array
+    {
+        $cerradas = $casos->where('estado_operativo', 'cerrado');
+        $encuestas = $casos->map(fn (Pqrsd $c) => $c->relationLoaded('encuesta') ? $c->encuesta : $c->encuesta()->first())->filter();
+        $promedio = $encuestas->isEmpty() ? null : round((float) $encuestas->avg('puntuacion'), 2);
+        $tasa = $cerradas->count() > 0
+            ? round(($encuestas->count() / $cerradas->count()) * 100, 1)
+            : null;
+
+        return [
+            'recibidas' => $casos->count(),
+            'pendientes_clasificacion' => $casos->filter(fn (Pqrsd $c) => $c->pendienteDeClasificacion())->count(),
+            'en_proceso' => $casos->filter(fn (Pqrsd $c) => ! in_array($c->estado_operativo, ['cerrado', 'respondido'], true)
+                && $c->fecha_respuesta === null
+                && $c->nivel_riesgo !== 'pendiente')->count(),
+            'proximas_vencer' => $casos->filter(fn (Pqrsd $c) => $c->cumplimientoVigente() === 'proximo_vencer')->count(),
+            'vencidas' => $casos->filter(fn (Pqrsd $c) => $c->cumplimientoVigente() === 'vencido')->count(),
+            'cerradas' => $cerradas->count(),
+            'satisfaccion_promedio' => $promedio,
+            'encuestas' => $encuestas->count(),
+            'tasa_participacion' => $tasa,
+            'alertas_vitales_preventivas' => $casos->where('alerta_vital_preventiva', true)->where('nivel_riesgo', 'pendiente')->count(),
+            'sin_clasificar_espera_critica' => $casos->filter(fn (Pqrsd $c) => $c->esperaSuperaPlazoMasCorto())->count(),
         ];
+    }
+
+    /**
+     * @param  Collection<int, Pqrsd>  $casos
+     * @param  callable(Pqrsd): string  $etiqueta
+     * @return list<array{etiqueta: string, total: int}>
+     */
+    private function conteoEtiqueta(Collection $casos, callable $etiqueta): array
+    {
+        return $casos
+            ->groupBy($etiqueta)
+            ->map(fn (Collection $grupo, string $nombre) => ['etiqueta' => $nombre, 'total' => $grupo->count()])
+            ->sortByDesc('total')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, Pqrsd>  $casos
+     * @param  callable(Pqrsd): string  $etiqueta
+     * @return list<array{etiqueta: string, promedio: float|null, encuestas: int}>
+     */
+    private function promedioEncuesta(Collection $casos, callable $etiqueta): array
+    {
+        return $casos
+            ->groupBy($etiqueta)
+            ->map(function (Collection $grupo, string $nombre) {
+                $encuestas = $grupo->map(fn (Pqrsd $c) => $c->encuesta)->filter();
+
+                return [
+                    'etiqueta' => $nombre,
+                    'promedio' => $encuestas->isEmpty() ? null : round((float) $encuestas->avg('puntuacion'), 2),
+                    'encuestas' => $encuestas->count(),
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     public function esOportuno(Pqrsd $caso): bool
@@ -564,34 +693,10 @@ class IndicadoresPqrsdService
             'mes' => 'todos',
         ])))->get();
 
-        // Respondidas en el año según fecha_respuesta (misma sede/EPS/tipo).
         $respondidasQuery = Pqrsd::query()->whereNotNull('fecha_respuesta');
-        $user = Auth::user();
-        if ($user && ! $user->can('pqrsd.view_all')) {
-            $uid = $user->id;
-            $respondidasQuery->where(function ($q) use ($uid) {
-                $q->where('responsable_id', $uid)
-                    ->orWhere('creado_por', $uid)
-                    ->orWhere('radicado_por', $uid);
-            });
-        }
+        $this->aplicarVisibilidad($respondidasQuery);
+        $this->aplicarAtributos($respondidasQuery, new Request($filtrosBase));
         $respondidasQuery->whereYear('fecha_respuesta', $anio);
-        if (($filtrosBase['sede_id'] ?? 'todos') !== 'todos' && ! empty($filtrosBase['sede_id'])) {
-            $respondidasQuery->where('sede_id', (int) $filtrosBase['sede_id']);
-        }
-        if (($filtrosBase['aseguradora_id'] ?? 'todos') !== 'todos' && ! empty($filtrosBase['aseguradora_id'])) {
-            $respondidasQuery->where('aseguradora_id', (int) $filtrosBase['aseguradora_id']);
-        }
-        if (($filtrosBase['tipo_pqrsd_id'] ?? 'todos') !== 'todos' && ! empty($filtrosBase['tipo_pqrsd_id'])) {
-            $respondidasQuery->where('tipo_pqrsd_id', (int) $filtrosBase['tipo_pqrsd_id']);
-        }
-        if (($filtrosBase['motivo_pqrsd_id'] ?? 'todos') !== 'todos' && ! empty($filtrosBase['motivo_pqrsd_id'])) {
-            if ($filtrosBase['motivo_pqrsd_id'] === 'sin_motivo') {
-                $respondidasQuery->whereNull('motivo_pqrsd_id');
-            } else {
-                $respondidasQuery->where('motivo_pqrsd_id', (int) $filtrosBase['motivo_pqrsd_id']);
-            }
-        }
         $respondidas = $respondidasQuery->get();
 
         $labels = [];
@@ -652,7 +757,120 @@ class IndicadoresPqrsdService
             'aseguradora_id' => $request->input('aseguradora_id', 'todos'),
             'tipo_pqrsd_id' => $request->input('tipo_pqrsd_id', 'todos'),
             'motivo_pqrsd_id' => $request->input('motivo_pqrsd_id', 'todos'),
+            'desde' => $request->input('desde', ''),
+            'hasta' => $request->input('hasta', ''),
+            'nivel_riesgo' => $this->valor($request, 'nivel_riesgo') ?? '',
+            'responsable_id' => $this->valor($request, 'responsable_id') ?? '',
+            'estado_cumplimiento' => $this->valor($request, 'estado_cumplimiento') ?? '',
         ];
+    }
+
+    private function aplicarVisibilidad(Builder $query): void
+    {
+        $user = Auth::user();
+        if ($user && ! $user->can('pqrsd.view_all')) {
+            $uid = $user->id;
+            $query->where(function ($q) use ($uid) {
+                $q->where('responsable_id', $uid)
+                    ->orWhere('creado_por', $uid)
+                    ->orWhere('radicado_por', $uid);
+            });
+        }
+    }
+
+    private function aplicarPeriodoRecepcion(Builder $query, Request $request): void
+    {
+        if ($this->valor($request, 'anio') !== null) {
+            $query->whereYear('fecha_recepcion', (int) $request->input('anio'));
+        }
+        if ($this->valor($request, 'mes') !== null) {
+            $query->whereMonth('fecha_recepcion', (int) $request->input('mes'));
+        }
+
+        $desde = $this->fechaRecepcion($request->input('desde'));
+        $hasta = $this->fechaRecepcion($request->input('hasta'));
+        if ($desde !== null && $hasta !== null && $desde > $hasta) {
+            return;
+        }
+        if ($desde !== null) {
+            $query->whereDate('fecha_recepcion', '>=', $desde);
+        }
+        if ($hasta !== null) {
+            $query->whereDate('fecha_recepcion', '<=', $hasta);
+        }
+    }
+
+    private function aplicarAtributos(Builder $query, Request $request): void
+    {
+        if ($this->valor($request, 'sede_id') !== null) {
+            $query->where('sede_id', (int) $request->input('sede_id'));
+        }
+        if ($this->valor($request, 'aseguradora_id') !== null) {
+            $query->where('aseguradora_id', (int) $request->input('aseguradora_id'));
+        }
+        if ($this->valor($request, 'tipo_pqrsd_id') !== null) {
+            $query->where('tipo_pqrsd_id', (int) $request->input('tipo_pqrsd_id'));
+        }
+        $motivo = $this->valor($request, 'motivo_pqrsd_id');
+        if ($motivo === 'sin_motivo') {
+            $query->whereNull('motivo_pqrsd_id');
+        } elseif ($motivo !== null) {
+            $query->where('motivo_pqrsd_id', (int) $motivo);
+        }
+        $riesgo = $this->valor($request, 'nivel_riesgo');
+        if ($riesgo !== null && in_array($riesgo, self::NIVELES_RIESGO, true)) {
+            $query->where('nivel_riesgo', $riesgo);
+        }
+        $responsable = $this->valor($request, 'responsable_id');
+        if ($responsable !== null && ctype_digit($responsable)) {
+            $query->where('responsable_id', (int) $responsable);
+        }
+        $cumplimiento = $this->valor($request, 'estado_cumplimiento');
+        if ($cumplimiento !== null && in_array($cumplimiento, self::ESTADOS_CUMPLIMIENTO, true)) {
+            app(SlaCalculator::class)->restringirConsulta($query, $cumplimiento);
+        }
+        if ($this->valor($request, 'estado_operativo') !== null) {
+            $query->where('estado_operativo', (string) $request->input('estado_operativo'));
+        }
+    }
+
+    private function valor(Request $request, string $clave): ?string
+    {
+        if (! $request->filled($clave)) {
+            return null;
+        }
+        $valor = trim((string) $request->input($clave));
+        if ($valor === '' || $valor === 'todos') {
+            return null;
+        }
+
+        return $valor;
+    }
+
+    private function fechaRecepcion(mixed $valor): ?string
+    {
+        if (! $this->vino($valor) || ! is_string($valor) && ! is_numeric($valor)) {
+            return null;
+        }
+        $texto = trim((string) $valor);
+        if (! preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $texto, $partes)) {
+            return null;
+        }
+        if (! checkdate((int) $partes[2], (int) $partes[3], (int) $partes[1])) {
+            return null;
+        }
+
+        return $texto;
+    }
+
+    private function vino(mixed $valor): bool
+    {
+        if ($valor === null) {
+            return false;
+        }
+        $texto = trim((string) $valor);
+
+        return $texto !== '' && $texto !== 'todos';
     }
 
     /**

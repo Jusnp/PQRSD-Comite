@@ -14,6 +14,15 @@
 @endforeach
 </select></div>
 <div><label class="form-label">Código</label><input class="form-input" name="codigo" value="{{ old('codigo', $item->codigo) }}" required></div>
+<div class="full"><label class="form-label">Subcategoría sugerida</label>
+<select class="form-select" name="subcategoria_sugerida_id">
+<option value="">Sin sugerencia</option>
+@foreach($subcategorias as $sub)
+<option value="{{ $sub->id }}" @selected(old('subcategoria_sugerida_id', $item->subcategoria_sugerida_id) == $sub->id)>{{ $sub->categoria?->nombre }} — {{ $sub->nombre }}</option>
+@endforeach
+</select>
+<p class="muted">Es una sugerencia configurable. No clasifica el riesgo ni cierra la decisión.</p>
+</div>
 <div class="full"><label class="form-label">Nombre</label><input class="form-input" name="nombre" value="{{ old('nombre', $item->nombre) }}" required></div>
 <div class="full"><label class="form-label">Descripción</label><textarea class="form-input" name="descripcion" rows="3">{{ old('descripcion', $item->descripcion) }}</textarea></div>
 <div class="full"><label><input type="checkbox" name="activo" value="1" @checked(old('activo', $item->activo))> Activo</label></div>

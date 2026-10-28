@@ -25,6 +25,10 @@ class PqrsdService
                 ? \Carbon\Carbon::parse($data['fecha_recepcion'], 'America/Bogota')
                 : now('America/Bogota');
 
+            if (! empty($data['es_anonimo'])) {
+                $data['solicitante_telefono'] = null;
+            }
+
             $nivelSolicitado = $data['nivel_riesgo'] ?? 'pendiente';
 
             $resolucion = $nivelSolicitado !== 'pendiente'
@@ -125,7 +129,11 @@ class PqrsdService
                 ]);
             }
 
-            $this->auditar($caso, $usuario, 'radicar', null, $caso->toArray());
+            $despues = $caso->toArray();
+            if ($caso->es_anonimo) {
+                unset($despues['solicitante_telefono']);
+            }
+            $this->auditar($caso, $usuario, 'radicar', null, $despues);
 
             if (in_array($nivelRiesgo, ['vital_menor', 'vital_general'], true)) {
                 app(SlaNotificationService::class)->notificarVitalInmediato($caso);

@@ -36,6 +36,7 @@ class AnonimoYMediosRespuestaTest extends TestCase
             'asunto' => 'Asunto de manifestación',
             'descripcion' => 'Descripción de los hechos con longitud suficiente para la validación del formulario.',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
         ], $extra));
     }
 
@@ -99,14 +100,21 @@ class AnonimoYMediosRespuestaTest extends TestCase
         $this->postPublico([
             'tipo_pqrsd_id' => $denuncia->id,
             'es_anonimo' => '1',
-            'medio_respuesta' => 'correspondencia',
-            'solicitante_direccion' => 'Calle 10 # 20-30, Medellín',
+            'medio_respuesta' => 'consulta_segura',
         ])->assertRedirect();
 
         $c2 = Pqrsd::latest('id')->firstOrFail();
-        $this->assertSame('correspondencia', $c2->medio_respuesta);
-        $this->assertSame('Calle 10 # 20-30, Medellín', $c2->solicitante_direccion);
+        $this->assertSame('consulta_segura', $c2->medio_respuesta);
+        $this->assertNull($c2->solicitante_direccion);
+        $this->assertNull($c2->solicitante_telefono);
         $this->assertNull($c2->solicitante_documento);
+
+        $this->postPublico([
+            'tipo_pqrsd_id' => $denuncia->id,
+            'es_anonimo' => '1',
+            'medio_respuesta' => 'telefono',
+            'solicitante_telefono' => '3001234567',
+        ])->assertSessionHasErrors('medio_respuesta');
     }
 
     public function test_consulta_estado_solo_radicado_y_consulta_segura_protegida(): void

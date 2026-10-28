@@ -23,7 +23,11 @@ class Pqrsd extends Model
         'canal_ingreso_id',
         'tipo_pqrsd_id',
         'motivo_pqrsd_id',
+        'categoria_pqrsd_id',
+        'subcategoria_pqrsd_id',
         'nivel_riesgo',
+        'ciudadano_no_clasifica',
+        'alerta_vital_preventiva',
         'regla_sla_id',
         'regla_sla_version',
         'fecha_inicio_conteo',
@@ -33,6 +37,8 @@ class Pqrsd extends Model
         'es_anonimo',
         'anonimo_pendiente_validacion_juridica',
         'acepto_tratamiento_datos',
+        'tratamiento_aceptado_en',
+        'tratamiento_politica_version',
         'consentimiento_comunicacion_email',
         'origen_publico',
         'medio_respuesta',
@@ -85,6 +91,9 @@ class Pqrsd extends Model
             'es_anonimo' => 'boolean',
             'anonimo_pendiente_validacion_juridica' => 'boolean',
             'acepto_tratamiento_datos' => 'boolean',
+            'tratamiento_aceptado_en' => 'datetime',
+            'ciudadano_no_clasifica' => 'boolean',
+            'alerta_vital_preventiva' => 'boolean',
             'consentimiento_comunicacion_email' => 'boolean',
         ];
     }
@@ -263,6 +272,60 @@ class Pqrsd extends Model
     public function motivo(): BelongsTo
     {
         return $this->belongsTo(MotivoPqrsd::class, 'motivo_pqrsd_id');
+    }
+
+    public function categoria(): BelongsTo
+    {
+        return $this->belongsTo(CategoriaPqrsd::class, 'categoria_pqrsd_id');
+    }
+
+    public function subcategoria(): BelongsTo
+    {
+        return $this->belongsTo(SubcategoriaPqrsd::class, 'subcategoria_pqrsd_id');
+    }
+
+    public function encuesta(): HasOne
+    {
+        return $this->hasOne(EncuestaSatisfaccionPqrsd::class, 'pqrsd_id');
+    }
+
+    public function pendienteDeClasificacion(): bool
+    {
+        return $this->ciudadano_no_clasifica
+            || $this->nivel_riesgo === 'pendiente'
+            || $this->estado_operativo === 'pendiente_clasificacion';
+    }
+
+    public function segundosSinClasificacion(): ?int
+    {
+        if (! $this->pendienteDeClasificacion() || $this->fecha_recepcion === null) {
+            return null;
+        }
+
+        return max(0, (int) $this->fecha_recepcion->diffInSeconds(now('America/Bogota')));
+    }
+
+    public function etiquetaEsperaClasificacion(): ?string
+    {
+        $segundos = $this->segundosSinClasificacion();
+        if ($segundos === null) {
+            return null;
+        }
+
+        $horas = intdiv($segundos, 3600);
+        $minutos = intdiv($segundos % 3600, 60);
+        if ($horas >= 48) {
+            return intdiv($horas, 24).' d '.($horas % 24).' h';
+        }
+
+        return $horas.' h '.$minutos.' min';
+    }
+
+    public function esperaSuperaPlazoMasCorto(): bool
+    {
+        $segundos = $this->segundosSinClasificacion();
+
+        return $segundos !== null && $segundos >= 8 * 3600;
     }
 
     public function reglaSla(): BelongsTo

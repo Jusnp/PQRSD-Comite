@@ -95,9 +95,7 @@ class CoherenciaOportunidadPqrsdTest extends TestCase
 
         $this->actingAs($admin)
             ->get(route('reportes.index', ['desde' => '2026-10-01', 'hasta' => '2026-10-31']))
-            ->assertOk()
-            ->assertSee('66.7%')
-            ->assertSee('Respondido tardíamente');
+            ->assertRedirect(route('reportes.indicadores', ['desde' => '2026-10-01', 'hasta' => '2026-10-31']));
 
         $pdf = view('reportes.pdf', [
             'rows' => app(ReporteService::class)->filasExportacion(

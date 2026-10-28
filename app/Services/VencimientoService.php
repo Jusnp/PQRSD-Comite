@@ -9,6 +9,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 class VencimientoService
@@ -304,7 +305,13 @@ class VencimientoService
             ->chunkById(100, function ($casos) use (&$count, $ahora) {
                 foreach ($casos as $caso) {
                     $this->refrescarCumplimiento($caso, $ahora);
-                    $this->notificaciones->evaluarRecordatorios($caso->fresh());
+                    try {
+                        $this->notificaciones->evaluarRecordatorios($caso->fresh());
+                    } catch (\Throwable) {
+                        Log::warning('La bandeja de vencimientos continuó sin registrar una alerta', [
+                            'pqrsd_id' => $caso->id,
+                        ]);
+                    }
                     $count++;
                 }
             });

@@ -28,6 +28,26 @@
         <input type="hidden" name="dir" value="{{ $dir }}">
         <div class="full"><strong>Filtros principales</strong></div>
         <div>
+            <label class="form-label" for="tipo_documento">Tipo de documento</label>
+            <select class="form-select" id="tipo_documento" name="tipo_documento">
+                <option value="">Cualquiera</option>
+                @foreach($tiposDocumento as $codigo => $etiqueta)
+                    <option value="{{ $codigo }}" @selected(request('tipo_documento') === $codigo)>{{ $etiqueta }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="documento">Número de documento</label>
+            <input class="form-input" id="documento" name="documento" value="{{ request('documento') }}" inputmode="numeric" autocomplete="off">
+        </div>
+        <div>
+            <label class="form-label" for="clasificacion">Clasificación</label>
+            <select class="form-select" id="clasificacion" name="clasificacion">
+                <option value="">Todas</option>
+                <option value="sin_clasificar" @selected(request('clasificacion') === 'sin_clasificar')>Sin clasificar</option>
+            </select>
+        </div>
+        <div>
             <label class="form-label" for="q">Buscar</label>
             <input class="form-input" id="q" type="search" name="q" value="{{ request('q') }}" placeholder="Radicado, solicitante o paciente">
         </div>
@@ -154,6 +174,29 @@
     </form>
 </div>
 
+<div class="grid-stats" style="margin-bottom:18px">
+    <div class="card stat-card"><div class="label">Recibidas</div><div class="value">{{ $resumen['recibidas'] ?? $items->total() }}</div></div>
+    <div class="card stat-card"><div class="label">Pendientes de clasificación</div><div class="value">{{ $resumen['pendientes_clasificacion'] }}</div></div>
+    <div class="card stat-card"><div class="label">En proceso</div><div class="value">{{ $resumen['en_proceso'] }}</div></div>
+    <div class="card stat-card"><div class="label">Próximas a vencer</div><div class="value">{{ $resumen['proximas_vencer'] }}</div></div>
+    <div class="card stat-card"><div class="label">Vencidas</div><div class="value">{{ $resumen['vencidas'] }}</div></div>
+    <div class="card stat-card"><div class="label">Cerradas</div><div class="value">{{ $resumen['cerradas'] }}</div></div>
+    <div class="card stat-card"><div class="label">Satisfacción</div><div class="value">{{ $resumen['satisfaccion_promedio'] !== null ? $resumen['satisfaccion_promedio'] : 'Sin datos' }}</div></div>
+    <div class="card stat-card"><div class="label">Participación</div><div class="value">{{ $resumen['tasa_participacion'] !== null ? $resumen['tasa_participacion'].'%' : 'Sin datos' }}</div></div>
+</div>
+@if(($resumen['pendientes_clasificacion'] ?? 0) > 0)
+    <div class="alert alert-warning" role="status">
+        Hay {{ $resumen['pendientes_clasificacion'] }} solicitudes sin clasificar.
+        El tiempo corre desde la recepción original y clasificar no reinicia el plazo.
+        @if(($resumen['sin_clasificar_espera_critica'] ?? 0) > 0)
+            {{ $resumen['sin_clasificar_espera_critica'] }} ya superan el plazo más corto vigente (8 horas) y pueden quedar vencidas al clasificarse.
+        @endif
+    </div>
+@endif
+@if(($resumen['alertas_vitales_preventivas'] ?? 0) > 0)
+    <div class="alert alert-warning" role="status">Hay {{ $resumen['alertas_vitales_preventivas'] }} solicitudes sin clasificar con alerta preventiva de posible riesgo vital. Revíselas primero. El plazo formal se calcula al clasificar, desde la recepción original.</div>
+@endif
+
 <div class="card card-pad">
     <p class="bandeja-scroll-hint" id="bandeja-scroll-hint">
         En pantallas intermedias puede desplazarse horizontalmente dentro del listado; la columna «Ver expediente» permanece visible a la derecha.
@@ -198,10 +241,15 @@
                     <tr class="{{ $rowClass }}">
                         <td class="col-radicado">
                             <a class="radicado-link" href="{{ route('pqrsd.show', $caso) }}">{{ $caso->radicado }}</a>
-                            @if($pendienteEval)<span class="badge-pendiente">Pendiente evaluación</span>@endif
+                            @if($caso->pendienteDeClasificacion())<span class="badge-pendiente">Pendiente de clasificación</span>@endif
+                            @if($caso->alerta_vital_preventiva && $caso->nivel_riesgo === 'pendiente')<span class="badge-vital">Revisión prioritaria</span>@endif
+                            @if($caso->esperaSuperaPlazoMasCorto())<span class="badge-vital">Espera crítica</span>@endif
                             @if($vital)<span class="badge-vital">Vital</span>@endif
                             <div class="bandeja-meta">
                                 Recepción {{ $caso->fecha_recepcion?->timezone('America/Bogota')->format('d/m/Y H:i') ?? '—' }}
+                                @if($caso->pendienteDeClasificacion())
+                                    · Sin clasificación: {{ $caso->etiquetaEsperaClasificacion() }}
+                                @endif
                                 · {{ $caso->sede?->nombre ?? 'Sin sede' }}
                                 · {{ $caso->aseguradora?->nombre ?? 'Sin EPS' }}
                                 @if($ultima)

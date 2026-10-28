@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Catalogo;
 
 use App\Http\Controllers\Controller;
 use App\Models\MotivoPqrsd;
+use App\Models\SubcategoriaPqrsd;
 use App\Models\TipoPqrsd;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,6 +24,7 @@ class MotivoPqrsdController extends Controller
         return view('catalogos.motivos.form', [
             'item' => new MotivoPqrsd(['activo' => true]),
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
+            'subcategorias' => SubcategoriaPqrsd::with('categoria')->where('activo', true)->orderBy('nombre')->get(),
         ]);
     }
 
@@ -38,6 +40,7 @@ class MotivoPqrsdController extends Controller
         return view('catalogos.motivos.form', [
             'item' => $motivo,
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
+            'subcategorias' => SubcategoriaPqrsd::with('categoria')->where('activo', true)->orderBy('nombre')->get(),
         ]);
     }
 
@@ -52,6 +55,7 @@ class MotivoPqrsdController extends Controller
     {
         return $request->validate([
             'tipo_pqrsd_id' => ['required', 'exists:tipos_pqrsd,id'],
+            'subcategoria_sugerida_id' => ['nullable', 'exists:subcategorias_pqrsd,id'],
             'codigo' => ['required', 'string', 'max:40'],
             'nombre' => ['required', 'string', 'max:255'],
             'descripcion' => ['nullable', 'string'],

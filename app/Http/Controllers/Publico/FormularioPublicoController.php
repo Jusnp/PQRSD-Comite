@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Publico;
 use App\Http\Controllers\Controller;
 use App\Models\Aseguradora;
 use App\Models\CanalIngreso;
+use App\Models\MotivoPqrsd;
 use App\Models\Pqrsd;
 use App\Models\Sede;
 use App\Models\TipoPqrsd;
@@ -12,8 +13,10 @@ use App\Models\User;
 use App\Services\AdjuntoPqrsdService;
 use App\Services\ConflictoIdempotenciaPublica;
 use App\Services\IdempotenciaRadicacionPublica;
+use App\Services\EncuestaSatisfaccionService;
 use App\Services\PqrsdService;
 use App\Support\EstadoPublicoPqrsd;
+use App\Support\TelefonoColombia;
 use App\Support\PublicUrl;
 use App\Support\QrPngGenerator;
 use Illuminate\Http\RedirectResponse;
@@ -38,6 +41,7 @@ class FormularioPublicoController extends Controller
     {
         return view('publico.formulario', [
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
+            'motivos' => MotivoPqrsd::with('subcategoriaSugerida.categoria')->where('activo', true)->orderBy('nombre')->get(),
             'sedes' => Sede::where('activo', true)->orderBy('nombre')->get(),
             'aseguradoras' => Aseguradora::where('activo', true)->orderBy('nombre')->get(),
             'viaQr' => $request->boolean('qr'),
@@ -67,6 +71,13 @@ class FormularioPublicoController extends Controller
         $tiposDoc = array_keys(config('pqrsd_publico.tipos_documento', []));
 
         $esAnonimo = $request->boolean('es_anonimo');
+        $noClasifica = $request->boolean('ciudadano_no_clasifica');
+        if ($noClasifica) {
+            $request->merge(['tipo_pqrsd_id' => null, 'motivo_pqrsd_id' => null]);
+        }
+        if ($request->input('motivo_pqrsd_id') === '') {
+            $request->merge(['motivo_pqrsd_id' => null]);
+        }
         $quien = (string) $request->input('quien_radica', '');
         $esPaciente = $quien === 'paciente';
         $esTercero = $quien === 'tercero';
@@ -76,6 +87,7 @@ class FormularioPublicoController extends Controller
                 'solicitante_nombre' => null,
                 'solicitante_tipo_documento' => null,
                 'solicitante_documento' => null,
+                'solicitante_telefono' => null,
             ]);
         }
         if ($esPaciente) {
@@ -92,7 +104,9 @@ class FormularioPublicoController extends Controller
 
         $data = $request->validate([
             'idempotency_key' => ['required', 'uuid'],
-            'tipo_pqrsd_id' => ['required', 'exists:tipos_pqrsd,id'],
+            'tipo_pqrsd_id' => [$noClasifica ? 'nullable' : 'required', 'exists:tipos_pqrsd,id'],
+            'motivo_pqrsd_id' => ['nullable', 'exists:motivos_pqrsd,id'],
+            'ciudadano_no_clasifica' => ['sometimes', 'boolean'],
             'es_anonimo' => ['sometimes', 'boolean'],
             'quien_radica' => ['required', Rule::in(['paciente', 'tercero'])],
             'medio_respuesta' => ['required', 'in:'.implode(',', $medios)],
@@ -100,7 +114,7 @@ class FormularioPublicoController extends Controller
             'solicitante_tipo_documento' => [$esAnonimo ? 'nullable' : 'required', Rule::in($tiposDoc)],
             'solicitante_documento' => [$esAnonimo ? 'nullable' : 'required', 'string', 'max:30'],
             'solicitante_email' => ['nullable', 'email', 'max:255'],
-            'solicitante_telefono' => ['nullable', 'string', 'max:30', 'regex:/^[\d\s\+\-\(\)]{7,30}$/'],
+            'solicitante_telefono' => [$esAnonimo ? 'nullable' : 'required', 'string', 'max:30'],
             'solicitante_direccion' => ['nullable', 'string', 'max:500'],
             'consentimiento_comunicacion_email' => ['sometimes', 'boolean'],
             'relacion_paciente' => [$esTercero && ! $esAnonimo ? 'required' : 'nullable', 'string', 'max:255'],
@@ -114,27 +128,24 @@ class FormularioPublicoController extends Controller
             'asunto' => ['required', 'string', 'min:5', 'max:255'],
             'descripcion' => ['required', 'string', 'min:20', 'max:5000'],
             'fecha_hechos' => ['nullable', 'date', 'before_or_equal:today'],
-            'acepto_tratamiento_datos' => ['accepted'],
+            'acepto_tratamiento_datos' => [($this->politicaPublicada() && ! $esAnonimo) ? 'accepted' : 'nullable'],
             'adjuntos' => ['nullable', 'array', 'max:'.$maxFiles],
             'adjuntos.*' => ['file', 'max:'.$maxKb],
         ], [
             'acepto_tratamiento_datos.accepted' => 'Debe aceptar el tratamiento de datos personales (Ley 1581 de 2012).',
             'idempotency_key.required' => 'Recargue el formulario e intente de nuevo.',
             'medio_respuesta.required' => 'Seleccione cómo desea recibir o consultar la respuesta.',
+            'medio_respuesta.in' => 'Seleccione correo electrónico, teléfono o consulta segura en el portal.',
             'quien_radica.required' => 'Indique si usted es el paciente o presenta la solicitud en nombre de otra persona.',
-            'solicitante_telefono.regex' => 'Ingrese un teléfono válido.',
+            'solicitante_telefono.required' => 'El teléfono es obligatorio cuando la solicitud no es anónima.',
             'asunto.required' => 'Indique el asunto de la manifestación.',
             'descripcion.min' => 'La descripción debe tener al menos :min caracteres.',
         ]);
 
-        // Validación telefónica: al menos 7 dígitos reales (rechaza ASDFGHJKL).
-        if (filled($data['solicitante_telefono'] ?? null)) {
-            $digitos = preg_replace('/\D+/', '', (string) $data['solicitante_telefono']);
-            if (strlen((string) $digitos) < 7) {
-                return back()->withInput()->withErrors([
-                    'solicitante_telefono' => 'Ingrese un teléfono válido.',
-                ]);
-            }
+        if (! $esAnonimo && ! TelefonoColombia::esValido($data['solicitante_telefono'] ?? null)) {
+            return back()->withInput()->withErrors([
+                'solicitante_telefono' => 'Ingrese un teléfono móvil o fijo de Colombia. Ejemplo: 3001234567 o 6041234567.',
+            ]);
         }
 
         $medio = $data['medio_respuesta'];
@@ -145,9 +156,9 @@ class FormularioPublicoController extends Controller
             ]);
         }
 
-        if ($medio === 'correspondencia' && blank($data['solicitante_direccion'] ?? null)) {
+        if ($medio === 'telefono' && $esAnonimo) {
             return back()->withInput()->withErrors([
-                'solicitante_direccion' => 'Indique la dirección de correspondencia física.',
+                'medio_respuesta' => 'Una radicación anónima no guarda teléfono, así que no puede usar ese medio de respuesta.',
             ]);
         }
 
@@ -167,9 +178,9 @@ class FormularioPublicoController extends Controller
             ]);
         }
 
-        $tipo = TipoPqrsd::query()->findOrFail($data['tipo_pqrsd_id']);
+        $tipo = $noClasifica ? null : TipoPqrsd::query()->findOrFail($data['tipo_pqrsd_id']);
         $prioritarios = config('pqrsd_publico.anonimo_tipos_prioritarios', ['QUEJA', 'DENUNCIA']);
-        $anonimoPendienteJuridica = $esAnonimo && ! in_array($tipo->codigo, $prioritarios, true);
+        $anonimoPendienteJuridica = $esAnonimo && $tipo && ! in_array($tipo->codigo, $prioritarios, true);
 
         $canalCodigo = $request->boolean('via_qr') ? 'QR' : 'WEB';
         $canal = CanalIngreso::where('codigo', $canalCodigo)->firstOrFail();
@@ -200,8 +211,8 @@ class FormularioPublicoController extends Controller
             'email' => $data['solicitante_email'] ?? null,
             default => $esAnonimo ? null : ($data['solicitante_email'] ?? null),
         };
-        $direccion = $medio === 'correspondencia' ? ($data['solicitante_direccion'] ?? null) : null;
-        $telefono = $data['solicitante_telefono'] ?? null;
+        $direccion = null;
+        $telefono = $esAnonimo ? null : ($data['solicitante_telefono'] ?? null);
 
         if ($esPaciente) {
             $pacienteNombre = $esAnonimo ? null : $nombre;
@@ -216,7 +227,9 @@ class FormularioPublicoController extends Controller
         }
 
         $huella = $this->idempotencia->huella([
-            'tipo_pqrsd_id' => (int) $data['tipo_pqrsd_id'],
+            'tipo_pqrsd_id' => $noClasifica ? null : (int) $data['tipo_pqrsd_id'],
+            'motivo_pqrsd_id' => $data['motivo_pqrsd_id'] ?? null,
+            'ciudadano_no_clasifica' => $noClasifica,
             'es_anonimo' => $esAnonimo,
             'quien_radica' => $data['quien_radica'],
             'medio' => $medio,
@@ -272,12 +285,15 @@ class FormularioPublicoController extends Controller
                     $tokenPlano,
                     function () use (
                         $data, $canal, $sistema, $tokenPlano, $files, $descripcion,
-                        $esAnonimo, $anonimoPendienteJuridica, $medio, $nombre, $tipoDoc, $documento, $email, $direccion, $telefono,
+                        $esAnonimo, $anonimoPendienteJuridica, $noClasifica, $medio, $nombre, $tipoDoc, $documento, $email, $direccion, $telefono,
                         $pacienteNombre, $pacienteTipoDoc, $pacienteDoc, $representante, $canalCodigo
                     ) {
                         $caso = $this->pqrsdService->radicarManual([
                             'canal_ingreso_id' => $canal->id,
-                            'tipo_pqrsd_id' => $data['tipo_pqrsd_id'],
+                            'tipo_pqrsd_id' => $noClasifica ? null : $data['tipo_pqrsd_id'],
+                            'motivo_pqrsd_id' => $noClasifica ? null : ($data['motivo_pqrsd_id'] ?? null),
+                            'ciudadano_no_clasifica' => $noClasifica,
+                            'alerta_vital_preventiva' => false,
                             'nivel_riesgo' => 'pendiente',
                             'es_anonimo' => $esAnonimo,
                             'solicitante_nombre' => $nombre,
@@ -296,14 +312,21 @@ class FormularioPublicoController extends Controller
                             'descripcion' => $descripcion,
                         ], $sistema);
 
+                        $registraConsentimiento = $this->politicaPublicada() && ! $esAnonimo;
                         $caso->update([
                             'consulta_token_hash' => hash('sha256', $tokenPlano),
-                            'acepto_tratamiento_datos' => true,
+                            'acepto_tratamiento_datos' => $registraConsentimiento,
+                            'tratamiento_aceptado_en' => $registraConsentimiento ? now('America/Bogota') : null,
+                            'tratamiento_politica_version' => $registraConsentimiento
+                                ? $this->versionConsentimiento()
+                                : null,
                             'consentimiento_comunicacion_email' => $medio === 'email' && request()->boolean('consentimiento_comunicacion_email'),
                             'origen_publico' => $canalCodigo === 'QR' ? 'qr' : 'web',
                             'medio_respuesta' => $medio,
                             'solicitante_direccion' => $direccion,
                             'anonimo_pendiente_validacion_juridica' => $anonimoPendienteJuridica,
+                            'ciudadano_no_clasifica' => $noClasifica,
+                            'alerta_vital_preventiva' => false,
                         ]);
 
                         if ($files !== []) {
@@ -426,7 +449,7 @@ class FormularioPublicoController extends Controller
             'radicado' => $caso->radicado,
             'estadoPublico' => EstadoPublicoPqrsd::etiqueta($caso),
             'mensaje' => EstadoPublicoPqrsd::mensaje($caso),
-            'medioEtiqueta' => config('pqrsd_publico.medios_respuesta.'.$caso->medio_respuesta, null),
+            'medioEtiqueta' => \App\Support\MedioRespuesta::etiqueta($caso->medio_respuesta),
         ]);
     }
 
@@ -478,11 +501,52 @@ class FormularioPublicoController extends Controller
             $caso->refresh();
         }
 
+        return $this->vistaConsultaAutorizada($caso, $data['token']);
+    }
+
+    public function encuesta(Request $request, EncuestaSatisfaccionService $encuestas): View|RedirectResponse
+    {
+        $data = $request->validate([
+            'radicado' => ['required', 'string', 'max:30'],
+            'token' => ['required', 'string', 'min:20', 'max:80'],
+            'puntuacion' => ['required', 'integer', 'between:1,5'],
+            'atendida' => ['required', Rule::in(['si', 'parcialmente', 'no'])],
+            'comentario' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $caso = Pqrsd::query()
+            ->where('radicado', strtoupper(trim($data['radicado'])))
+            ->where('consulta_token_hash', hash('sha256', $data['token']))
+            ->first();
+
+        if (! $caso) {
+            return back()->withErrors([
+                'radicado' => 'No fue posible validar la consulta con los datos suministrados.',
+            ]);
+        }
+
+        try {
+            $encuestas->registrar($caso, $data);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $bolsa = new \Illuminate\Support\ViewErrorBag;
+            $bolsa->put('default', new \Illuminate\Support\MessageBag($e->errors()));
+
+            return $this->vistaConsultaAutorizada($caso, $data['token'])->with('errors', $bolsa);
+        }
+
+        session()->now('success', 'Gracias. Su valoración quedó registrada y no reabre el expediente.');
+
+        return $this->vistaConsultaAutorizada($caso->fresh(), $data['token']);
+    }
+
+    private function vistaConsultaAutorizada(Pqrsd $caso, string $token): View
+    {
         return view('publico.consulta-resultado', [
-            'caso' => $caso->load(['tipo', 'sede', 'canal']),
+            'caso' => $caso->load(['tipo', 'sede', 'canal', 'encuesta']),
             'respuestaPublica' => $caso->respuestaDisponibleParaConsulta()
                 ? $caso->respuesta_consulta_texto
                 : null,
+            'tokenConsulta' => $token,
         ]);
     }
 
@@ -568,5 +632,19 @@ class FormularioPublicoController extends Controller
         file_put_contents($pngPath, QrPngGenerator::generate($url, 320));
         file_put_contents($target, $url);
         file_put_contents($marker, $hash);
+    }
+
+    private function politicaPublicada(): bool
+    {
+        return trim((string) config('identidad.politica_tratamiento_url')) !== ''
+            && trim((string) config('identidad.politica_tratamiento_version')) !== '';
+    }
+
+    private function versionConsentimiento(): string
+    {
+        $version = trim((string) config('identidad.politica_tratamiento_version'));
+        $codigo = trim((string) config('identidad.politica_tratamiento_codigo'));
+
+        return $codigo !== '' ? $codigo.' V'.$version : $version;
     }
 }

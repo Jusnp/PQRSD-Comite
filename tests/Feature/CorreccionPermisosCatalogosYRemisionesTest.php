@@ -299,6 +299,7 @@ class CorreccionPermisosCatalogosYRemisionesTest extends TestCase
             'medio_respuesta' => 'email',
             'consentimiento_comunicacion_email' => '1',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
         ])->assertRedirect();
 
         $this->assertDatabaseHas('pqrsd', ['solicitante_nombre' => 'Ciudadano Catálogo']);

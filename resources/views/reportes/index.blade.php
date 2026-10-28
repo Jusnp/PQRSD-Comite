@@ -1,7 +1,7 @@
 @extends('layouts.pqrsd')
 @section('title', 'Reportes')
 @section('heading', 'Reportes e indicadores')
-@section('subheading', 'Inventario filtrable — exportación administrativa (no sustituye anexos oficiales Supersalud)')
+@section('subheading', 'Soportes de auditoría. El PDF no tiene firma digital certificada.')
 
 @section('content')
 <div class="alert alert-info" role="note">
@@ -114,7 +114,9 @@
         <tbody>
             @foreach($items as $caso)
                 <tr>
-                    <td><a href="{{ route('pqrsd.show', $caso) }}">{{ $caso->radicado }}</a></td>
+                    <td><a href="{{ route('pqrsd.show', $caso) }}">{{ $caso->radicado }}</a>
+                        <div><a href="{{ route('reportes.expediente.pdf', $caso) }}">PDF</a> · <a href="{{ route('reportes.expediente.zip', $caso) }}">Expediente completo</a></div>
+                    </td>
                     <td>{{ $caso->fecha_recepcion?->timezone('America/Bogota')->format('d/m/Y H:i') }}</td>
                     <td>{{ $caso->tipo?->nombre ?? '—' }}</td>
                     <td>{{ str_replace('_',' ', $caso->nivel_riesgo) }}</td>

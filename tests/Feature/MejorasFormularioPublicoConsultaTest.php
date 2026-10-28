@@ -34,6 +34,7 @@ class MejorasFormularioPublicoConsultaTest extends TestCase
             'asunto' => 'Asunto de prueba ciudadana',
             'descripcion' => 'Descripción de los hechos con longitud suficiente para la validación del formulario público.',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
             'medio_respuesta' => 'consulta_segura',
         ], $extra);
     }
@@ -207,14 +208,24 @@ class MejorasFormularioPublicoConsultaTest extends TestCase
         $this->assertSame('email', Pqrsd::latest('id')->first()->medio_respuesta);
 
         $this->post(route('publico.store'), $this->base([
-            'solicitante_nombre' => 'Por Carta',
+            'solicitante_nombre' => 'Por Teléfono',
             'solicitante_tipo_documento' => 'CE',
             'solicitante_documento' => '2',
-            'medio_respuesta' => 'correspondencia',
-            'solicitante_direccion' => 'Carrera 1 # 2-3',
+            'solicitante_telefono' => '6041234567',
+            'medio_respuesta' => 'telefono',
         ]))->assertRedirect();
-        $this->assertSame('correspondencia', Pqrsd::latest('id')->first()->medio_respuesta);
-        $this->assertSame('Carrera 1 # 2-3', Pqrsd::latest('id')->first()->solicitante_direccion);
+        $this->assertSame('telefono', Pqrsd::latest('id')->first()->medio_respuesta);
+        $this->assertSame('6041234567', Pqrsd::latest('id')->first()->solicitante_telefono);
+
+        $this->from(route('publico.formulario'))
+            ->post(route('publico.store'), $this->base([
+                'solicitante_nombre' => 'Carta Antigua',
+                'solicitante_tipo_documento' => 'CC',
+                'solicitante_documento' => '3',
+                'medio_respuesta' => 'correspondencia',
+                'solicitante_direccion' => 'Carrera 1 # 2-3',
+            ]))
+            ->assertSessionHasErrors('medio_respuesta');
 
         $this->post(route('publico.store'), $this->base([
             'solicitante_nombre' => 'Portal Seguro',
@@ -257,6 +268,7 @@ class MejorasFormularioPublicoConsultaTest extends TestCase
             ->post(route('publico.store'), [
                 'idempotency_key' => (string) Str::uuid(),
                 'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
                 'descripcion' => 'corta',
             ])
             ->assertRedirect(route('publico.formulario'))
@@ -299,8 +311,8 @@ class MejorasFormularioPublicoConsultaTest extends TestCase
             'solicitante_nombre' => 'Con Sonido',
             'solicitante_tipo_documento' => 'CC',
             'solicitante_documento' => '66',
-            'medio_respuesta' => 'correspondencia',
-            'solicitante_direccion' => 'Calle 1',
+            'medio_respuesta' => 'telefono',
+            'solicitante_telefono' => '3001234567',
         ]))->assertRedirect();
 
         $html = $this->get(route('publico.confirmacion'))->assertOk()->getContent();
@@ -375,8 +387,9 @@ class MejorasFormularioPublicoConsultaTest extends TestCase
                 'solicitante_nombre' => 'Sin Dirección',
                 'solicitante_tipo_documento' => 'CC',
                 'solicitante_documento' => '9',
-                'medio_respuesta' => 'correspondencia',
+                'es_anonimo' => '1',
+                'medio_respuesta' => 'telefono',
             ]))
-            ->assertSessionHasErrors('solicitante_direccion');
+            ->assertSessionHasErrors('medio_respuesta');
     }
 }

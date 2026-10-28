@@ -53,8 +53,16 @@ return [
 
     'medios_respuesta' => [
         'email' => 'Correo electrónico',
-        'correspondencia' => 'Correspondencia física',
+        'telefono' => 'Teléfono',
         'consulta_segura' => 'Consulta segura en el portal',
+    ],
+
+    /*
+    | Valores que ya no se ofrecen al radicar, pero siguen leyéndose
+    | en expedientes anteriores. No se reescriben.
+    */
+    'medios_respuesta_historicos' => [
+        'correspondencia' => 'Correspondencia física',
     ],
 
     /*

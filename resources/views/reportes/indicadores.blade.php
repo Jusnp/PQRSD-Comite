@@ -1,19 +1,51 @@
 @extends('layouts.pqrsd')
 
-@section('title', 'Indicadores PQRSD')
-@section('heading', 'Indicadores PQRSD')
-@section('subheading', 'Oportunidad de respuesta — cohorte por fecha de recepción')
+@section('title', 'Indicadores y reportes')
+@section('heading', 'Indicadores y reportes')
+@section('subheading', 'Oportunidad de respuesta — cohorte por fecha de recepción. Meta institucional 95 %.')
 
 @section('content')
 @php
     $g = $tablero['generales'];
     $f = $filtros;
+    $consulta = $consulta ?? request()->query();
+    $avanzadosAbiertos = filled($f['desde'] ?? null)
+        || filled($f['hasta'] ?? null)
+        || filled($f['nivel_riesgo'] ?? null)
+        || filled($f['responsable_id'] ?? null)
+        || filled($f['estado_cumplimiento'] ?? null);
 @endphp
+<style>
+.filtros-avanzados[hidden]{display:none!important}
+</style>
+
+<div class="grid-stats" style="margin-bottom:18px">
+    <div class="card stat-card"><div class="label">Casos totales</div><div class="value">{{ $g['recibidas'] }}</div></div>
+    <div class="card stat-card"><div class="label">Pendientes de clasificación</div><div class="value">{{ $g['pendientes_clasificacion'] ?? 0 }}</div></div>
+    <div class="card stat-card"><div class="label">Próximos a vencer</div><div class="value">{{ $g['proximas_vencer'] ?? 0 }}</div></div>
+    <div class="card stat-card"><div class="label">Vencidos</div><div class="value">{{ $g['vencidas'] ?? 0 }}</div></div>
+    <div class="card stat-card"><div class="label">Respondidos</div><div class="value">{{ $g['respondidas'] }}</div></div>
+    <div class="card stat-card"><div class="label">Cerrados</div><div class="value">{{ $g['cerradas'] ?? 0 }}</div></div>
+    <div class="card stat-card">
+        <div class="label">Porcentaje de oportunidad</div>
+        <div class="value">{{ $g['pct_oportunidad'] !== null ? $g['pct_oportunidad'].'%' : 'Sin datos' }}</div>
+        <div class="muted">Meta {{ rtrim(rtrim(number_format($g['meta_oportunidad_pct'] ?? $tablero['meta_oportunidad_pct'], 2, '.', ''), '0'), '.') }}%</div>
+    </div>
+    <div class="card stat-card"><div class="label">Satisfacción del ciudadano</div><div class="value">{{ ($g['satisfaccion_promedio'] ?? null) !== null ? $g['satisfaccion_promedio'] : 'Sin datos' }}</div><div class="muted">Sin encuestas no se asume un valor positivo</div></div>
+</div>
 
 <form method="GET" action="{{ route('reportes.indicadores') }}" class="card card-pad" style="margin-bottom:18px" aria-label="Filtros de indicadores">
+    @if(!empty($erroresFiltro))
+        <div class="alert alert-error" role="alert">
+            @foreach($erroresFiltro as $mensaje)
+                <div>{{ $mensaje }}</div>
+            @endforeach
+        </div>
+    @endif
     <div class="form-grid">
+        <div class="full"><strong>Filtros principales</strong></div>
         <div>
-            <label class="form-label" for="anio">Año</label>
+            <label class="form-label" for="anio">Año de recepción</label>
             <select class="form-select" id="anio" name="anio">
                 <option value="todos" @selected(($f['anio'] ?? 'todos') === 'todos')>Todos</option>
                 @foreach ($anios as $anio)
@@ -22,7 +54,7 @@
             </select>
         </div>
         <div>
-            <label class="form-label" for="mes">Mes</label>
+            <label class="form-label" for="mes">Mes de recepción</label>
             <select class="form-select" id="mes" name="mes">
                 <option value="todos" @selected(($f['mes'] ?? 'todos') === 'todos')>Todos</option>
                 @for ($m = 1; $m <= 12; $m++)
@@ -40,7 +72,7 @@
             </select>
         </div>
         <div>
-            <label class="form-label" for="aseguradora_id">Aseguradora</label>
+            <label class="form-label" for="aseguradora_id">EPS / Aseguradora</label>
             <select class="form-select" id="aseguradora_id" name="aseguradora_id">
                 <option value="todos" @selected(($f['aseguradora_id'] ?? 'todos') === 'todos')>Todas</option>
                 @foreach ($aseguradoras as $a)
@@ -67,45 +99,125 @@
                 @endforeach
             </select>
         </div>
-        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="full">
+            <button type="button" class="btn btn-secondary" id="btn-mas-filtros-reportes" aria-expanded="{{ $avanzadosAbiertos ? 'true' : 'false' }}" aria-controls="filtros-reportes-avanzados">
+                {{ $avanzadosAbiertos ? 'Ocultar más filtros' : 'Más filtros' }}
+            </button>
+        </div>
+        <div id="filtros-reportes-avanzados" class="form-grid full filtros-avanzados" @if(! $avanzadosAbiertos) hidden @endif>
+            <div class="full"><strong>Más filtros</strong></div>
+            <div>
+                <label class="form-label" for="desde">Recepción desde</label>
+                <input class="form-input" id="desde" type="date" name="desde" value="{{ $f['desde'] ?? '' }}">
+            </div>
+            <div>
+                <label class="form-label" for="hasta">Recepción hasta</label>
+                <input class="form-input" id="hasta" type="date" name="hasta" value="{{ $f['hasta'] ?? '' }}">
+            </div>
+            <div>
+                <label class="form-label" for="nivel_riesgo">Nivel de riesgo</label>
+                <select class="form-select" id="nivel_riesgo" name="nivel_riesgo">
+                    <option value="">Todos</option>
+                    @foreach (\App\Services\IndicadoresPqrsdService::NIVELES_RIESGO as $riesgo)
+                        <option value="{{ $riesgo }}" @selected(($f['nivel_riesgo'] ?? '') === $riesgo)>{{ str_replace('_', ' ', $riesgo) }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div>
+                <label class="form-label" for="responsable_id">Responsable registrado</label>
+                <select class="form-select" id="responsable_id" name="responsable_id">
+                    <option value="">Todos</option>
+                    @foreach ($responsables as $responsable)
+                        <option value="{{ $responsable->id }}" @selected((string) ($f['responsable_id'] ?? '') === (string) $responsable->id)>{{ $responsable->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div>
+                <label class="form-label" for="estado_cumplimiento">Estado de cumplimiento</label>
+                <select class="form-select" id="estado_cumplimiento" name="estado_cumplimiento">
+                    <option value="">Todos</option>
+                    @foreach (\App\Services\IndicadoresPqrsdService::ESTADOS_CUMPLIMIENTO as $cumplimiento)
+                        <option value="{{ $cumplimiento }}" @selected(($f['estado_cumplimiento'] ?? '') === $cumplimiento)>{{ str_replace('_', ' ', $cumplimiento) }}</option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+        <div class="full" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
             <button class="btn btn-green" type="submit">Filtrar</button>
             <a class="btn btn-secondary" href="{{ route('reportes.indicadores') }}">Limpiar filtros</a>
         </div>
     </div>
-    <p class="muted" style="margin:12px 0 0">Vista principal: cohorte por <strong>fecha de recepción</strong>. {{ $tablero['denominador_explicacion'] }}</p>
+    <p class="muted" style="margin:12px 0 0">La cohorte, el año, el mes y el rango desde/hasta usan la <strong>fecha de recepción</strong>. {{ $tablero['denominador_explicacion'] }}</p>
+    <p class="muted" role="note">El cumplimiento se calcula con la fecha de respuesta y la fecha límite, no con el estado guardado del expediente.</p>
+    <p class="muted" role="note">El responsable es el que quedó registrado en el expediente. La bandeja compartida no asigna uno de forma automática; si elige una persona, solo aparecen los expedientes que ya la tienen.</p>
     <p class="muted" role="note">Meta institucional de oportunidad: <strong>{{ rtrim(rtrim(number_format($tablero['meta_oportunidad_pct'], 2, '.', ''), '0'), '.') }}%</strong> (fuente: configuración PQRSD_META_OPORTUNIDAD).</p>
     @if($tablero['denuncia_aprobacion_produccion_pendiente'] ?? false)
         <p class="muted" role="note">Denuncias: 10 días hábiles activos en desarrollo. Aprobación jurídica para producción pendiente.</p>
     @endif
 </form>
 
-<div class="grid-stats" style="margin-bottom:18px">
-    <div class="card stat-card"><div class="label">Recibidas</div><div class="value">{{ $g['recibidas'] }}</div></div>
-    <div class="card stat-card"><div class="label">Respondidas</div><div class="value">{{ $g['respondidas'] }}</div></div>
-    <div class="card stat-card"><div class="label">Pendientes</div><div class="value">{{ $g['pendientes'] }}</div></div>
-    <div class="card stat-card"><div class="label">Vencidas s/ respuesta</div><div class="value">{{ $g['vencidas_sin_respuesta'] }}</div></div>
-    <div class="card stat-card"><div class="label">Oportunas</div><div class="value" style="color:var(--green)">{{ $g['oportunas'] }}</div></div>
-    <div class="card stat-card"><div class="label">Fuera de plazo</div><div class="value" style="color:var(--red)">{{ $g['fuera_plazo'] }}</div></div>
-    <div class="card stat-card">
-        <div class="label">% Oportunidad</div>
-        <div class="value">{{ $g['pct_oportunidad'] !== null ? $g['pct_oportunidad'].'%' : 'Sin datos' }}</div>
-        <div class="muted">
-            Denominador: {{ $g['evaluables'] }} evaluables · Meta {{ rtrim(rtrim(number_format($g['meta_oportunidad_pct'] ?? $tablero['meta_oportunidad_pct'], 2, '.', ''), '0'), '.') }}%:
-            @if(($g['cumplimiento_meta'] ?? 'sin_datos') === 'cumple')
-                <span style="color:var(--green)">cumple</span>
-            @elseif(($g['cumplimiento_meta'] ?? '') === 'no_cumple')
-                <span style="color:var(--red)">no cumple</span>
-            @else
-                sin datos
-            @endif
+<section class="card card-pad" style="margin-bottom:18px" aria-labelledby="graficos-admin">
+    <h2 id="graficos-admin" style="margin-top:0">Distribución administrativa</h2>
+    <p class="muted">Las cifras de estas gráficas salen de la misma cohorte que las tarjetas y las exportaciones. Si no hay encuestas, no se dibuja satisfacción.</p>
+    <div class="form-grid">
+        <div>
+            <h3>Por categoría</h3>
+            <canvas id="chartCategoria" height="180" aria-label="Casos por categoría"></canvas>
+            <table class="pqrsd-table"><tbody>
+                @forelse($tablero['por_categoria'] ?? [] as $fila)
+                    <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['total'] }}</td></tr>
+                @empty
+                    <tr><td colspan="2">Sin datos de categoría.</td></tr>
+                @endforelse
+            </tbody></table>
+        </div>
+        <div>
+            <h3>Por categoría y subcategoría</h3>
+            <canvas id="chartSubcategoria" height="180" aria-label="Casos por subcategoría"></canvas>
+            <table class="pqrsd-table"><tbody>
+                @forelse($tablero['por_subcategoria'] ?? [] as $fila)
+                    <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['total'] }}</td></tr>
+                @empty
+                    <tr><td colspan="2">Sin datos de subcategoría.</td></tr>
+                @endforelse
+            </tbody></table>
+        </div>
+        <div>
+            <h3>Vencidos por sede</h3>
+            <canvas id="chartVencidosSede" height="180" aria-label="Casos vencidos por sede"></canvas>
+            <table class="pqrsd-table"><tbody>
+                @forelse($tablero['vencidos_por_sede'] ?? [] as $fila)
+                    <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['total'] }}</td></tr>
+                @empty
+                    <tr><td colspan="2">No hay casos vencidos en la cohorte.</td></tr>
+                @endforelse
+            </tbody></table>
+        </div>
+        <div>
+            <h3>Satisfacción por sede</h3>
+            <canvas id="chartSatisfaccionSede" height="180" aria-label="Satisfacción por sede"></canvas>
+            <table class="pqrsd-table"><tbody>
+                @forelse($tablero['satisfaccion_por_sede'] ?? [] as $fila)
+                    <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['promedio'] !== null ? $fila['promedio'].' ('.$fila['encuestas'].' encuestas)' : 'Sin encuestas' }}</td></tr>
+                @empty
+                    <tr><td colspan="2">Sin encuestas.</td></tr>
+                @endforelse
+            </tbody></table>
+        </div>
+        <div>
+            <h3>Satisfacción por tipo</h3>
+            <canvas id="chartSatisfaccionTipo" height="180" aria-label="Satisfacción por tipo"></canvas>
+            <table class="pqrsd-table"><tbody>
+                @forelse($tablero['satisfaccion_por_tipo'] ?? [] as $fila)
+                    <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['promedio'] !== null ? $fila['promedio'].' ('.$fila['encuestas'].' encuestas)' : 'Sin encuestas' }}</td></tr>
+                @empty
+                    <tr><td colspan="2">Sin encuestas.</td></tr>
+                @endforelse
+            </tbody></table>
         </div>
     </div>
-    <div class="card stat-card">
-        <div class="label">Tiempo promedio respuesta</div>
-        <div class="value" style="font-size:18px">{{ $g['tiempo_promedio_legible'] ?? 'Sin datos' }}</div>
-        <div class="muted">Solo con respuesta oficial</div>
-    </div>
-</div>
+    <p class="muted">La evolución mensual sigue la cohorte de recepción. La meta institucional permanece en {{ rtrim(rtrim(number_format($tablero['meta_oportunidad_pct'], 2, '.', ''), '0'), '.') }}%.</p>
+</section>
 
 <section class="card card-pad" style="margin-bottom:18px" aria-labelledby="circ-riesgo">
     <h2 id="circ-riesgo" style="margin-top:0">Indicadores por nivel de riesgo</h2>
@@ -202,10 +314,6 @@
 <section class="card card-pad" aria-labelledby="tabla-ind">
     <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center">
         <h2 id="tabla-ind" style="margin:0">Tabla de resultados</h2>
-        <div style="display:flex;gap:8px">
-            <a class="btn btn-secondary" href="{{ route('reportes.indicadores.excel', request()->query()) }}">Excel</a>
-            <a class="btn btn-secondary" href="{{ route('reportes.indicadores.pdf', request()->query()) }}">PDF</a>
-        </div>
     </div>
     <div class="table-wrap" style="margin-top:14px">
         <table class="pqrsd-table">
@@ -245,6 +353,51 @@
             @endforeach
             </tbody>
         </table>
+    </div>
+</section>
+
+<section class="card card-pad" id="soportes" style="margin-top:18px" aria-labelledby="soportes-titulo">
+    <h2 id="soportes-titulo" style="margin-top:0">Reportes y soportes</h2>
+    <p class="muted">El PDF no tiene firma digital certificada. Las exportaciones usan los mismos filtros visibles y no cambian la fórmula de oportunidad.</p>
+    <div class="table-wrap">
+        <table class="pqrsd-table">
+            <thead>
+                <tr>
+                    <th>Radicado</th>
+                    <th>Recepción</th>
+                    <th>Tipo</th>
+                    <th>Sede</th>
+                    <th>Cumplimiento</th>
+                    <th>Soportes</th>
+                </tr>
+            </thead>
+            <tbody>
+            @forelse($expedientes as $caso)
+                <tr>
+                    <td><a href="{{ route('pqrsd.show', $caso) }}">{{ $caso->radicado }}</a></td>
+                    <td>{{ $caso->fecha_recepcion?->timezone('America/Bogota')->format('d/m/Y H:i') }}</td>
+                    <td>{{ $caso->tipo?->nombre ?? 'En clasificación' }}</td>
+                    <td>{{ $caso->sede?->nombre ?? '—' }}</td>
+                    <td>{{ str_replace('_', ' ', $caso->cumplimientoVigente()) }}</td>
+                    <td>
+                        <a href="{{ route('reportes.expediente.pdf', $caso) }}">PDF</a>
+                        · <a href="{{ route('reportes.expediente.zip', $caso) }}">Expediente completo</a>
+                        · <a href="{{ route('pqrsd.show', $caso) }}#sec-historial">Historial</a>
+                    </td>
+                </tr>
+            @empty
+                <tr><td colspan="6">No hay expedientes en esta cohorte.</td></tr>
+            @endforelse
+            </tbody>
+        </table>
+    </div>
+    <div style="margin-top:12px">{{ $expedientes->fragment('soportes')->links() }}</div>
+    <h3 style="margin:18px 0 8px">Exportaciones</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <a class="btn btn-secondary" href="{{ route('reportes.excel', $consulta) }}">Exportar Excel</a>
+        <a class="btn btn-secondary" href="{{ route('reportes.pdf', $consulta) }}">Exportar PDF</a>
+        <a class="btn btn-secondary" href="{{ route('reportes.indicadores.excel', $consulta) }}">Excel de indicadores</a>
+        <a class="btn btn-secondary" href="{{ route('reportes.indicadores.pdf', $consulta) }}">PDF de indicadores</a>
     </div>
 </section>
 @endsection
@@ -294,6 +447,19 @@ html[data-theme="dark"] .circular-ring {
 @endpush
 
 @push('scripts')
+<script>
+(function () {
+    const btn = document.getElementById('btn-mas-filtros-reportes');
+    const box = document.getElementById('filtros-reportes-avanzados');
+    if (!btn || !box) return;
+    btn.addEventListener('click', function () {
+        const open = box.hasAttribute('hidden');
+        box.toggleAttribute('hidden', !open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        btn.textContent = open ? 'Ocultar más filtros' : 'Más filtros';
+    });
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -376,6 +542,51 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    function graficoConteo(id, filas, color) {
+        const el = document.getElementById(id);
+        if (!el || !Array.isArray(filas) || filas.length === 0) return;
+        new Chart(el, {
+            type: 'bar',
+            data: {
+                labels: filas.map(f => f.etiqueta),
+                datasets: [{ label: 'Casos', data: filas.map(f => f.total), backgroundColor: color }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+            }
+        });
+    }
+    function graficoPromedio(id, filas, color) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const utiles = (filas || []).filter(f => f.encuestas > 0 && f.promedio !== null);
+        if (utiles.length === 0) {
+            el.hidden = true;
+            return;
+        }
+        new Chart(el, {
+            type: 'bar',
+            data: {
+                labels: utiles.map(f => f.etiqueta),
+                datasets: [{ label: 'Promedio (1 a 5)', data: utiles.map(f => f.promedio), backgroundColor: color }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { x: { beginAtZero: true, max: 5 } }
+            }
+        });
+    }
+    graficoConteo('chartCategoria', @json($tablero['por_categoria'] ?? []), '#2563eb');
+    graficoConteo('chartSubcategoria', @json($tablero['por_subcategoria'] ?? []), '#0f766e');
+    graficoConteo('chartVencidosSede', @json($tablero['vencidos_por_sede'] ?? []), '#ef4444');
+    graficoPromedio('chartSatisfaccionSede', @json($tablero['satisfaccion_por_sede'] ?? []), '#d97706');
+    graficoPromedio('chartSatisfaccionTipo', @json($tablero['satisfaccion_por_tipo'] ?? []), '#7c3aed');
 
     const vol = @json($tablero['volumen_por_respuesta']);
     new Chart(document.getElementById('chartVolumen'), {

@@ -37,7 +37,7 @@
             <button class="btn btn-green" type="submit">Aplicar filtros</button>
             <a class="btn btn-secondary" href="{{ route('dashboard') }}">Limpiar</a>
             @can('reportes.view')
-                <a class="btn btn-secondary" href="{{ route('reportes.index') }}">Ir a reportes</a>
+                <a class="btn btn-secondary" href="{{ route('reportes.indicadores') }}">Indicadores y reportes</a>
             @endcan
         </div>
     </div>
@@ -64,6 +64,8 @@
     <div class="card stat-card" role="listitem"><div class="label">Riesgo vital</div><div class="value">{{ $stats['vitales'] }}</div></div>
     <div class="card stat-card" role="listitem"><div class="label">Vital menores</div><div class="value">{{ $stats['vitales_menores'] }}</div></div>
     <div class="card stat-card" role="listitem"><div class="label">Sin clasificar</div><div class="value">{{ $stats['pendientes_clasificacion'] }}</div></div>
+    <div class="card stat-card" role="listitem"><div class="label">Satisfacción</div><div class="value">{{ $stats['satisfaccion_promedio'] !== null ? $stats['satisfaccion_promedio'] : 'Sin datos' }}</div><div class="muted">Solo respuestas recibidas</div></div>
+    <div class="card stat-card" role="listitem"><div class="label">Participación</div><div class="value">{{ $stats['tasa_participacion'] !== null ? $stats['tasa_participacion'].'%' : 'Sin datos' }}</div><div class="muted">No responder no cuenta como satisfacción</div></div>
     <div class="card stat-card" role="listitem"><div class="label">Tiempo prom. respuesta</div><div class="value" style="font-size:22px">{{ $stats['tiempo_promedio_horas'] !== null ? $stats['tiempo_promedio_horas'].' h' : '—' }}</div></div>
 </div>
 

@@ -144,7 +144,7 @@ class CasoCompletoOperadoresTest extends TestCase
 
         $this->actingAs($auxiliar2)
             ->get(route('reportes.index'))
-            ->assertOk();
+            ->assertRedirect(route('reportes.indicadores'));
 
         $this->actingAs($auxiliar1)
             ->get(route('vencimientos.proximos'))

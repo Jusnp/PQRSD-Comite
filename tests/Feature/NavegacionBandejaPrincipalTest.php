@@ -77,11 +77,12 @@ class NavegacionBandejaPrincipalTest extends TestCase
         $this->actingAs($auxiliar)->get(route('vencimientos.proximos'))->assertOk();
         $this->actingAs($auxiliar)->get(route('vencimientos.vencidos'))->assertOk();
         $this->actingAs($auxiliar)->get(route('vencimientos.vitales'))->assertOk();
-        $this->actingAs($auxiliar)->get(route('reportes.index'))->assertOk()->assertSee('Reportes', false);
+        $this->actingAs($auxiliar)->get(route('reportes.index'))->assertRedirect(route('reportes.indicadores'));
+        $this->actingAs($auxiliar)->get(route('reportes.indicadores'))->assertOk()->assertSee('Indicadores y reportes', false);
 
         $html = $this->actingAs($auxiliar)->get(route('pqrsd.index'))->assertOk()->getContent();
         $this->assertStringContainsString(route('vencimientos.proximos', absolute: false), $html);
-        $this->assertStringContainsString(route('reportes.index', absolute: false), $html);
+        $this->assertStringContainsString(route('reportes.indicadores', absolute: false), $html);
         $this->assertStringNotContainsString('Dashboard PQRSD', $html);
     }
 
@@ -100,8 +101,8 @@ class NavegacionBandejaPrincipalTest extends TestCase
             ->assertSee('<h1>Nueva PQRSD</h1>', false);
 
         $this->actingAs($admin)
-            ->get(route('reportes.index'))
+            ->get(route('reportes.indicadores'))
             ->assertOk()
-            ->assertSee('<h1>Reportes e indicadores</h1>', false);
+            ->assertSee('<h1>Indicadores y reportes</h1>', false);
     }
 }

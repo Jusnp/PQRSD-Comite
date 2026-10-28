@@ -7,6 +7,7 @@ use App\Models\Aseguradora;
 use App\Models\MotivoPqrsd;
 use App\Models\Sede;
 use App\Models\TipoPqrsd;
+use App\Models\User;
 use App\Services\IndicadoresPqrsdService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -20,6 +21,8 @@ class IndicadoresPqrsdController extends Controller
 
     public function index(Request $request): View
     {
+        $depurado = $this->indicadores->depurarSolicitud($request);
+        $request->query->replace($depurado['consulta']);
         $tablero = $this->indicadores->construir($request);
         $anios = range((int) now('America/Bogota')->format('Y'), (int) now('America/Bogota')->format('Y') - 5);
 
@@ -27,6 +30,12 @@ class IndicadoresPqrsdController extends Controller
         if (($tablero['filtros']['tipo_pqrsd_id'] ?? 'todos') !== 'todos') {
             $motivosQuery->where('tipo_pqrsd_id', (int) $tablero['filtros']['tipo_pqrsd_id']);
         }
+
+        $expedientes = $this->indicadores->filtrarCohorteRecepcion($request)
+            ->with('responsable')
+            ->orderByDesc('fecha_recepcion')
+            ->paginate(15)
+            ->appends($depurado['consulta']);
 
         return view('reportes.indicadores', [
             'tablero' => $tablero,
@@ -36,11 +45,20 @@ class IndicadoresPqrsdController extends Controller
             'motivos' => $motivosQuery->get(),
             'anios' => $anios,
             'filtros' => $tablero['filtros'],
+            'expedientes' => $expedientes,
+            'responsables' => User::query()->where('activo', true)->orderBy('name')->get(['id', 'name']),
+            'erroresFiltro' => $depurado['errores'],
+            'consulta' => $depurado['consulta'],
         ]);
     }
 
     public function excel(Request $request): BinaryFileResponse|Response
     {
+        $depurado = $this->indicadores->depurarSolicitud($request);
+        if ($depurado['errores'] !== []) {
+            return redirect()->route('reportes.indicadores', $depurado['consulta'])->withErrors($depurado['errores']);
+        }
+        $request = $depurado['solicitud'];
         $tablero = $this->indicadores->construir($request);
         $rows = $this->indicadores->filasExportacion($tablero);
 
@@ -50,6 +68,11 @@ class IndicadoresPqrsdController extends Controller
 
     public function pdf(Request $request): Response
     {
+        $depurado = $this->indicadores->depurarSolicitud($request);
+        if ($depurado['errores'] !== []) {
+            return redirect()->route('reportes.indicadores', $depurado['consulta'])->withErrors($depurado['errores']);
+        }
+        $request = $depurado['solicitud'];
         $tablero = $this->indicadores->construir($request);
         $rows = $this->indicadores->filasExportacion($tablero);
 

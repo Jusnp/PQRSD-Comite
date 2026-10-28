@@ -33,5 +33,10 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="POLITICA_TRATAMIENTO_URL" value="" force="true"/>
+        <env name="POLITICA_TRATAMIENTO_VERSION" value="" force="true"/>
+        <env name="POLITICA_TRATAMIENTO_CODIGO" value="" force="true"/>
+        <env name="POLITICA_TRATAMIENTO_FECHA" value="" force="true"/>
+        <env name="PQRSD_SLA_CORREO_ALERTAS" value="false" force="true"/>
     </php>
 </phpunit>

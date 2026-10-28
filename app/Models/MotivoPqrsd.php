@@ -15,6 +15,7 @@ class MotivoPqrsd extends Model
 
     protected $fillable = [
         'tipo_pqrsd_id',
+        'subcategoria_sugerida_id',
         'codigo',
         'nombre',
         'descripcion',
@@ -31,6 +32,11 @@ class MotivoPqrsd extends Model
     public function tipo(): BelongsTo
     {
         return $this->belongsTo(TipoPqrsd::class, 'tipo_pqrsd_id');
+    }
+
+    public function subcategoriaSugerida(): BelongsTo
+    {
+        return $this->belongsTo(SubcategoriaPqrsd::class, 'subcategoria_sugerida_id');
     }
 
     public function pqrsd(): HasMany

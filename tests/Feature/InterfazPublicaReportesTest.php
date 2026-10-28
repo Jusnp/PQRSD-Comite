@@ -42,6 +42,7 @@ class InterfazPublicaReportesTest extends TestCase
             'asunto' => 'Queja de prueba pública',
             'descripcion' => 'Descripción ficticia de prueba pública con longitud suficiente.',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
         ]);
 
         $response->assertRedirect(route('publico.confirmacion'));
@@ -79,7 +80,8 @@ class InterfazPublicaReportesTest extends TestCase
 
         $this->actingAs($admin)->get(route('pqrsd.index'))->assertOk()->assertSee('Bandeja de PQRSD');
         $this->actingAs($admin)->get(route('dashboard'))->assertRedirect(route('pqrsd.index'));
-        $this->actingAs($admin)->get(route('reportes.index'))->assertOk()->assertSee('Reportes');
+        $this->actingAs($admin)->get(route('reportes.index'))->assertRedirect(route('reportes.indicadores'));
+        $this->actingAs($admin)->get(route('reportes.indicadores'))->assertOk()->assertSee('Indicadores y reportes');
         $this->actingAs($admin)->get(route('reportes.excel'))->assertOk();
         $this->actingAs($admin)->get(route('reportes.pdf'))->assertOk();
 

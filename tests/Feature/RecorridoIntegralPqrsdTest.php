@@ -82,6 +82,7 @@ class RecorridoIntegralPqrsdTest extends TestCase
             'asunto' => 'PRUEBA FICTICIA de recorrido',
             'descripcion' => 'PRUEBA FICTICIA. No corresponde a un paciente real ni a una atención clínica.',
             'acepto_tratamiento_datos' => '1',
+            'solicitante_telefono' => '3001234567',
             'paciente_fecha_nacimiento' => '1990-04-12',
             'adjuntos' => [$pdf],
         ])->assertRedirect(route('publico.confirmacion'));

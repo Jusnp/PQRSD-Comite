@@ -29,6 +29,7 @@
     $restanteTxt = $slaFmt->formatearDuracion($plazo['restante_segundos'] ?? 0);
     $transcurridoTxt = $slaFmt->formatearDuracion($plazo['transcurrido_segundos'] ?? 0);
     $puedeClasificar = ! $cerrado && auth()->user()?->can('classify', $pqrsd);
+    $puedeAuditar = auth()->user()?->can('reportes.view');
     $puedeActualizar = ! $cerrado && auth()->user()?->can('update', $pqrsd);
     $puedeCerrar = ! $cerrado && auth()->user()?->can('close', $pqrsd);
     $puedeResponder = $puedeActualizar;
@@ -43,6 +44,14 @@
     $adjuntosInternos = $pqrsd->adjuntos->where('tipo', 'soporte_interno')->whereNull('remision_interna_id');
     $remisionesHistoricas = $pqrsd->remisionesInternas;
 @endphp
+
+@if($puedeAuditar)
+    <p style="display:flex;gap:10px;flex-wrap:wrap">
+        <a class="btn btn-secondary" href="{{ route('reportes.expediente.pdf', $pqrsd) }}">Informe PDF</a>
+        <a class="btn btn-secondary" href="{{ route('reportes.expediente.zip', $pqrsd) }}">Descargar expediente completo</a>
+    </p>
+    <p class="muted">El PDF no tiene firma digital certificada. El ZIP incluye un manifiesto con hashes de integridad.</p>
+@endif
 
 <a class="back-button" href="{{ route('pqrsd.index') }}">← Volver al listado</a>
 
@@ -194,7 +203,12 @@
                 @if($pqrsd->anonimo_pendiente_validacion_juridica)
                     <p class="muted">Tipo anónimo pendiente de validación jurídica/institucional.</p>
                 @endif
-                <p><strong>Medio de respuesta:</strong> {{ config('pqrsd_publico.medios_respuesta.'.$pqrsd->medio_respuesta, $pqrsd->medio_respuesta ?? '—') }}</p>
+                <p><strong>Medio de respuesta:</strong> {{ \App\Support\MedioRespuesta::etiqueta($pqrsd->medio_respuesta) }}</p>
+                @if($pqrsd->medio_respuesta === 'telefono')
+                    <p class="muted">El teléfono es el medio de contacto preferido. La respuesta escrita permanece en el expediente y en la consulta segura. Una llamada solo consta si hay evidencia de fecha, funcionario y resultado. Su valor como notificación formal está pendiente de validación jurídica.</p>
+                @elseif($pqrsd->medio_respuesta === 'correspondencia')
+                    <p class="muted">Este expediente conservó correspondencia física. Las radicaciones nuevas ya no ofrecen ese medio.</p>
+                @endif
             </div>
             <div>
                 <h3 class="exp-subtitle">Paciente</h3>
@@ -241,10 +255,23 @@
     <div class="exp-section-body card-pad">
         @if($cerrado)
             <p class="muted">Caso cerrado. Clasificación no disponible.</p>
-            <p><strong>Tipo:</strong> {{ $pqrsd->tipo?->nombre ?? 'Pendiente' }} · <strong>Motivo:</strong> {{ $pqrsd->motivo?->nombre ?? '—' }}</p>
+            <p><strong>Tipo:</strong> {{ $pqrsd->tipo?->nombre ?? 'Pendiente de clasificación' }} · <strong>Motivo:</strong> {{ $pqrsd->motivo?->nombre ?? '—' }}</p>
+            <p><strong>Categoría:</strong> {{ $pqrsd->categoria?->nombre ?? '—' }} / {{ $pqrsd->subcategoria?->nombre ?? '—' }}</p>
             <p><strong>Riesgo:</strong> {{ str_replace('_', ' ', $pqrsd->nivel_riesgo) }}</p>
             <p><strong>Plazo:</strong> {{ $pqrsd->fecha_limite?->timezone('America/Bogota')->format('d/m/Y H:i') ?? '—' }}</p>
         @elseif($puedeClasificar)
+            @if($pqrsd->pendienteDeClasificacion())
+                <p class="alert alert-warning" role="status">
+                    Sin clasificación desde la recepción: {{ $pqrsd->etiquetaEsperaClasificacion() }}.
+                    Clasificar no reinicia el plazo.
+                    @if($pqrsd->esperaSuperaPlazoMasCorto())
+                        La espera ya supera el plazo más corto vigente (8 horas). El caso puede quedar vencido al confirmar el riesgo.
+                    @endif
+                    @if($pqrsd->alerta_vital_preventiva)
+                        El ciudadano indicó un posible riesgo vital. La clasificación definitiva la hace el personal autorizado.
+                    @endif
+                </p>
+            @endif
             <h3 class="exp-subtitle">Clasificar riesgo</h3>
             <p class="muted">Justifique el nivel. El SLA se calcula desde la recepción original. No se asigna «simple» por omisión. La bandeja es compartida: no se requiere asignar responsable.</p>
             <form method="POST" action="{{ route('pqrsd.clasificar', $pqrsd) }}" class="exp-form-narrow">
@@ -255,6 +282,29 @@
                     <option value="">Seleccione…</option>
                     @foreach (['vital_menor','vital_general','priorizado','simple','ordinario'] as $riesgo)
                         <option value="{{ $riesgo }}" @selected(old('nivel_riesgo', $pqrsd->nivel_riesgo === 'pendiente' ? '' : $pqrsd->nivel_riesgo) === $riesgo)>{{ str_replace('_',' ', $riesgo) }}</option>
+                    @endforeach
+                </select>
+                <label class="form-label" for="categoria_pqrsd_id" style="margin-top:10px">Categoría</label>
+                <select class="form-select" id="categoria_pqrsd_id" name="categoria_pqrsd_id">
+                    <option value="">Sin cambio</option>
+                    @foreach($categorias as $categoria)
+                        <option value="{{ $categoria->id }}" @selected(old('categoria_pqrsd_id', $pqrsd->categoria_pqrsd_id) == $categoria->id)>{{ $categoria->nombre }}</option>
+                    @endforeach
+                </select>
+                <label class="form-label" for="subcategoria_pqrsd_id" style="margin-top:10px">Subcategoría</label>
+                <select class="form-select" id="subcategoria_pqrsd_id" name="subcategoria_pqrsd_id">
+                    <option value="">Sin cambio</option>
+                    @foreach($categorias as $categoria)
+                        @foreach($categoria->subcategorias as $sub)
+                            <option value="{{ $sub->id }}" data-categoria="{{ $categoria->id }}" @selected(old('subcategoria_pqrsd_id', $pqrsd->subcategoria_pqrsd_id) == $sub->id)>{{ $categoria->nombre }} — {{ $sub->nombre }}</option>
+                        @endforeach
+                    @endforeach
+                </select>
+                <label class="form-label" for="motivo_pqrsd_id" style="margin-top:10px">Motivo</label>
+                <select class="form-select" id="motivo_pqrsd_id" name="motivo_pqrsd_id">
+                    <option value="">Sin cambio</option>
+                    @foreach($motivos as $motivo)
+                        <option value="{{ $motivo->id }}" @selected(old('motivo_pqrsd_id', $pqrsd->motivo_pqrsd_id) == $motivo->id)>{{ $motivo->nombre }}@if($motivo->subcategoriaSugerida) — sugiere {{ $motivo->subcategoriaSugerida->nombre }}@endif</option>
                     @endforeach
                 </select>
                 <label class="form-label" for="tipo_pqrsd_id" style="margin-top:10px">Tipo de manifestación</label>
@@ -345,13 +395,13 @@
                         <span>
                             Registrar envío realizado por otro medio
                             <span class="respuesta-ayuda" style="display:block;font-weight:500">
-                                Requiere canal y evidencia verificable. No usa Gmail automático ni afirma acuse de recibo.
+                                Requiere canal y evidencia verificable (fecha, funcionario y resultado). Sin esa evidencia no queda registrada una llamada. No usa Gmail automático ni afirma acuse de recibo. La llamada como notificación formal está pendiente de validación jurídica.
                             </span>
                         </span>
                     </label>
                     <div class="exp-envio-campos {{ old('marcar_envio_verificable') || old('respuesta_estado_destino') === 'enviada' ? 'is-visible' : '' }}" id="campos-envio-verificable">
                         <label class="form-label" for="respuesta_canal_comunicacion">Canal utilizado</label>
-                        <input class="form-input" id="respuesta_canal_comunicacion" name="respuesta_canal_comunicacion" maxlength="80" value="{{ old('respuesta_canal_comunicacion', $pqrsd->respuesta_canal_comunicacion) }}" placeholder="Ej. Correo institucional, correspondencia, ventanilla">
+                        <input class="form-input" id="respuesta_canal_comunicacion" name="respuesta_canal_comunicacion" maxlength="80" value="{{ old('respuesta_canal_comunicacion', $pqrsd->respuesta_canal_comunicacion) }}" placeholder="Ej. Teléfono con evidencia, correo institucional, consulta segura">
                         @error('respuesta_canal_comunicacion')<div class="muted" style="color:var(--red)">{{ $message }}</div>@enderror
                         <label class="form-label" for="respuesta_evidencia_comunicacion" style="margin-top:10px">Evidencia de comunicación</label>
                         <textarea class="form-input" id="respuesta_evidencia_comunicacion" name="respuesta_evidencia_comunicacion" rows="2" minlength="10" maxlength="2000" placeholder="Referencia verificable: número de guía, asunto/fecha del correo, acta, etc.">{{ old('respuesta_evidencia_comunicacion', $pqrsd->respuesta_evidencia_comunicacion) }}</textarea>
@@ -536,7 +586,16 @@
                 @foreach($notificaciones as $n)
                     <div class="timeline-item">
                         <strong>{{ str_replace('_', ' ', $n->tipo) }} — {{ $n->estado }}</strong>
-                        <div class="muted">{{ $n->enviada_en?->timezone('America/Bogota')->format('d/m/Y H:i') ?? $n->created_at?->timezone('America/Bogota')->format('d/m/Y H:i') }} · {{ $n->destinatario ?: 'sin destinatario' }}</div>
+                        @php
+                            $cantidadAviso = (int) ($n->metadatos['destinatarios_cantidad'] ?? 0);
+                            $etiquetaAviso = 'Aviso interno';
+                            if ($n->canal === 'correo' && filled($n->destinatario) && ! str_contains((string) $n->destinatario, ',')) {
+                                $etiquetaAviso = $n->destinatario;
+                            } elseif (! filled($n->destinatario) && $cantidadAviso === 0) {
+                                $etiquetaAviso = 'sin destinatario';
+                            }
+                        @endphp
+                        <div class="muted">{{ $n->enviada_en?->timezone('America/Bogota')->format('d/m/Y H:i') ?? $n->created_at?->timezone('America/Bogota')->format('d/m/Y H:i') }} · {{ $etiquetaAviso }}</div>
                         <div>{{ $n->mensaje }}</div>
                     </div>
                 @endforeach
@@ -544,7 +603,7 @@
         @endif
 
         @can('auditoria.view')
-            <details class="exp-audit-details" style="margin-top:16px">
+            <details class="exp-audit-details" id="sec-historial" style="margin-top:16px">
                 <summary class="exp-subtitle" style="cursor:pointer">Ver detalles de auditoría</summary>
                 <p class="muted">Registro técnico íntegro. No altera ni elimina eventos históricos.</p>
                 @forelse ($pqrsd->auditorias as $aud)

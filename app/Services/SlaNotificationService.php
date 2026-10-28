@@ -5,11 +5,40 @@ namespace App\Services;
 use App\Models\NotificacionPqrsd;
 use App\Models\Pqrsd;
 use App\Models\User;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class SlaNotificationService
 {
+    /**
+     * Aviso interno de revisión prioritaria. No envía correo ni fija el SLA.
+     */
+    public function alertaVitalPreventiva(Pqrsd $caso): void
+    {
+        if (! $caso->alerta_vital_preventiva) {
+            return;
+        }
+
+        if (NotificacionPqrsd::query()
+            ->where('pqrsd_id', $caso->id)
+            ->where('tipo', 'alerta_vital_preventiva')
+            ->exists()) {
+            return;
+        }
+
+        NotificacionPqrsd::create([
+            'pqrsd_id' => $caso->id,
+            'tipo' => 'alerta_vital_preventiva',
+            'canal' => 'interno',
+            'asunto' => 'Revisión prioritaria '.$caso->radicado,
+            'mensaje' => 'Revisión prioritaria de un expediente sin clasificación formal. No es un diagnóstico ni fija el plazo. La recepción original se conserva.',
+            'estado' => 'omitida',
+            'umbral_clave' => 'alerta_vital_preventiva',
+            'metadatos' => ['prioridad' => 'revision'],
+        ]);
+    }
+
     public function notificarVitalInmediato(Pqrsd $caso): void
     {
         if (! config('pqrsd_sla.notificar_vital_inmediato', true)) {
@@ -94,46 +123,79 @@ class SlaNotificationService
         }
 
         $destinatarios = $this->destinatarios($caso);
-        $emails = $destinatarios->pluck('email')->filter()->values()->all();
+        $ids = $destinatarios->pluck('id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+        $correoHabilitado = (bool) config('pqrsd_sla.correo_alertas_habilitado', false);
+        $principal = null;
+        if ($correoHabilitado) {
+            $primero = $destinatarios->first(fn (User $usuario) => filled($usuario->email) && mb_strlen((string) $usuario->email) <= 255);
+            if ($primero) {
+                $principal = (string) $primero->email;
+            }
+        }
 
-        $notif = NotificacionPqrsd::create([
-            'pqrsd_id' => $caso->id,
-            'user_id' => $destinatarios->first()?->id,
-            'tipo' => $tipo,
-            'canal' => 'correo',
-            'destinatario' => implode(', ', $emails) ?: null,
-            'asunto' => '[PQRSD '.$tipo.'] '.$caso->radicado,
-            'mensaje' => $mensaje,
-            'estado' => empty($emails) ? 'omitida' : 'pendiente',
-            'umbral_clave' => $umbralClave,
-            'metadatos' => array_merge($metadatos, ['destinatarios' => $emails]),
-            'error' => empty($emails) ? 'Sin destinatarios configurados' : null,
-        ]);
+        try {
+            $notif = NotificacionPqrsd::create([
+                'pqrsd_id' => $caso->id,
+                'user_id' => $ids[0] ?? null,
+                'tipo' => $tipo,
+                'canal' => $correoHabilitado ? 'correo' : 'interno',
+                'destinatario' => $principal,
+                'asunto' => '[PQRSD '.$tipo.'] '.$caso->radicado,
+                'mensaje' => $mensaje,
+                'estado' => ($correoHabilitado && $principal) ? 'pendiente' : 'omitida',
+                'umbral_clave' => $umbralClave,
+                'metadatos' => array_merge($metadatos, [
+                    'destinatario_ids' => $ids,
+                    'destinatarios_cantidad' => count($ids),
+                    'correo_habilitado' => $correoHabilitado,
+                ]),
+                'error' => $ids === []
+                    ? 'Sin destinatarios configurados'
+                    : ($correoHabilitado ? null : 'Correo de alertas deshabilitado'),
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            return;
+        } catch (\Throwable) {
+            Log::warning('Alerta SLA no persistida', [
+                'pqrsd_id' => $caso->id,
+                'tipo' => $tipo,
+                'umbral' => $umbralClave,
+            ]);
 
-        if (empty($emails)) {
             return;
         }
 
-        $fallos = [];
-        foreach ($emails as $email) {
+        if (! $correoHabilitado || $ids === []) {
+            return;
+        }
+
+        $enviados = 0;
+        $fallos = 0;
+        foreach ($destinatarios as $usuario) {
+            $email = (string) $usuario->email;
+            if ($email === '' || mb_strlen($email) > 255) {
+                $fallos++;
+
+                continue;
+            }
             try {
                 Mail::raw($mensaje, function ($mail) use ($email, $caso, $tipo) {
                     $mail->to($email)->subject('[PQRSD '.$tipo.'] '.$caso->radicado);
                 });
-            } catch (\Throwable $e) {
-                $fallos[] = $email.': '.$e->getMessage();
+                $enviados++;
+            } catch (\Throwable) {
+                $fallos++;
                 Log::warning('Fallo notificación PQRSD', [
-                    'pqrsd' => $caso->radicado,
-                    'email' => $email,
-                    'error' => $e->getMessage(),
+                    'pqrsd_id' => $caso->id,
+                    'user_id' => $usuario->id,
                 ]);
             }
         }
 
         $notif->update([
-            'estado' => empty($fallos) ? 'enviada' : (count($fallos) < count($emails) ? 'enviada' : 'fallida'),
+            'estado' => $enviados > 0 ? 'enviada' : 'fallida',
             'enviada_en' => now('America/Bogota'),
-            'error' => $fallos ? implode('; ', $fallos) : null,
+            'error' => $fallos > 0 ? 'No se pudo entregar a '.$fallos.' destinatario(s).' : null,
         ]);
     }
 

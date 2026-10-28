@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use App\Models\AreaInstitucional;
+use App\Models\CategoriaPqrsd;
+use App\Models\SubcategoriaPqrsd;
 use App\Models\Aseguradora;
 use App\Models\CanalIngreso;
 use App\Models\Festivo;
@@ -216,6 +218,78 @@ class CatalogosSeeder extends Seeder
                 ['fecha' => $festivo['fecha']],
                 array_merge($festivo, ['ambito' => 'nacional'])
             );
+        }
+
+        $this->sembrarTipificacionEditable();
+    }
+
+    /**
+     * Ejemplos de organización de la interfaz. No constituyen clasificación jurídica.
+     */
+    public function sembrarTipificacionEditable(): void
+    {
+        $arbol = [
+            ['codigo' => 'CALIDAD', 'nombre' => 'Calidad de atención', 'orden' => 10, 'subs' => [
+                ['codigo' => 'TRATO', 'nombre' => 'Trato inadecuado'],
+                ['codigo' => 'INFORMACION', 'nombre' => 'Información insuficiente'],
+            ]],
+            ['codigo' => 'ACCESO', 'nombre' => 'Acceso a servicios', 'orden' => 20, 'subs' => [
+                ['codigo' => 'NEGACION', 'nombre' => 'Negación del servicio'],
+                ['codigo' => 'DEMORA_ATENCION', 'nombre' => 'Demora en atención'],
+            ]],
+            ['codigo' => 'ADMIN', 'nombre' => 'Atención administrativa', 'orden' => 30, 'subs' => [
+                ['codigo' => 'TRAMITES', 'nombre' => 'Problemas de trámites'],
+                ['codigo' => 'DATO_INCORRECTO', 'nombre' => 'Información incorrecta'],
+            ]],
+            ['codigo' => 'OPORTUNIDAD', 'nombre' => 'Oportunidad', 'orden' => 40, 'subs' => [
+                ['codigo' => 'DEMORA_ASIGNACION', 'nombre' => 'Demoras en asignación'],
+            ]],
+            ['codigo' => 'FELICITACIONES', 'nombre' => 'Felicitaciones', 'orden' => 50, 'subs' => [
+                ['codigo' => 'RECONOCIMIENTO', 'nombre' => 'Reconocimiento al personal'],
+            ]],
+            ['codigo' => 'OTROS', 'nombre' => 'Otros', 'orden' => 90, 'subs' => [
+                ['codigo' => 'PENDIENTE', 'nombre' => 'Pendiente de tipificación'],
+            ]],
+        ];
+
+        $subIds = [];
+        foreach ($arbol as $cat) {
+            $categoria = CategoriaPqrsd::updateOrCreate(
+                ['codigo' => $cat['codigo']],
+                ['nombre' => $cat['nombre'], 'orden' => $cat['orden'], 'activo' => true, 'descripcion' => 'Ejemplo editable. No es clasificación jurídica definitiva.']
+            );
+            foreach ($cat['subs'] as $sub) {
+                $modelo = SubcategoriaPqrsd::updateOrCreate(
+                    ['categoria_pqrsd_id' => $categoria->id, 'codigo' => $sub['codigo']],
+                    ['nombre' => $sub['nombre'], 'activo' => true]
+                );
+                $subIds[$sub['codigo']] = $modelo->id;
+            }
+        }
+
+        $vinculos = [
+            'QUEJA' => ['TRATO_INADECUADO' => ['Trato inadecuado', 'TRATO'], 'INFO_INSUFICIENTE' => ['Información insuficiente', 'INFORMACION'], 'DEMORA_ASIGNACION' => ['Demoras en asignación', 'DEMORA_ASIGNACION']],
+            'RECLAMO' => ['NEGACION' => ['Negación del servicio', 'NEGACION'], 'DEMORA' => ['Demora en atención', 'DEMORA_ATENCION']],
+            'PETICION' => ['TRAMITES' => ['Problemas de trámites', 'TRAMITES'], 'DATO_INCORRECTO' => ['Información incorrecta', 'DATO_INCORRECTO']],
+            'FELICITACION' => ['RECONOCIMIENTO' => ['Reconocimiento al personal', 'RECONOCIMIENTO']],
+        ];
+
+        foreach ($vinculos as $tipoCodigo => $motivos) {
+            $tipo = TipoPqrsd::where('codigo', $tipoCodigo)->first();
+            if (! $tipo) {
+                continue;
+            }
+            foreach ($motivos as $codigo => [$nombre, $subCodigo]) {
+                MotivoPqrsd::updateOrCreate(
+                    ['tipo_pqrsd_id' => $tipo->id, 'codigo' => $codigo],
+                    [
+                        'nombre' => $nombre,
+                        'activo' => true,
+                        'subcategoria_sugerida_id' => $subIds[$subCodigo] ?? null,
+                        'descripcion' => 'Sugerencia configurable. El personal confirma la clasificación.',
+                    ]
+                );
+            }
         }
     }
 }

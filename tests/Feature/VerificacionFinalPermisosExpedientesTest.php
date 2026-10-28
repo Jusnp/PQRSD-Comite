@@ -229,7 +229,7 @@ class VerificacionFinalPermisosExpedientesTest extends TestCase
         foreach ([$aux1, $aux2] as $aux) {
             $this->actingAs($aux)->get(route('vencimientos.proximos'))->assertOk();
             $this->actingAs($aux)->get(route('reportes.indicadores'))->assertOk();
-            $this->actingAs($aux)->get(route('reportes.index'))->assertOk();
+            $this->actingAs($aux)->get(route('reportes.index'))->assertRedirect(route('reportes.indicadores'));
             $this->actingAs($aux)->get(route('publico.qr'))->assertOk();
             $this->actingAs($aux)->get(route('sedes.index'))->assertForbidden();
         }

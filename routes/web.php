@@ -3,6 +3,7 @@
 use App\Http\Controllers\Catalogo\AreaInstitucionalController;
 use App\Http\Controllers\Catalogo\AseguradoraController;
 use App\Http\Controllers\Catalogo\CanalIngresoController;
+use App\Http\Controllers\Catalogo\CategoriaPqrsdController;
 use App\Http\Controllers\Catalogo\MotivoPqrsdController;
 use App\Http\Controllers\Catalogo\ReglaSlaController;
 use App\Http\Controllers\Catalogo\SedeController;
@@ -48,6 +49,9 @@ Route::prefix('publico')->name('publico.')->group(function () {
     Route::post('/consulta-segura', [FormularioPublicoController::class, 'consultaSegura'])
         ->middleware('throttle:20,10')
         ->name('consulta.segura.store');
+    Route::post('/consulta-segura/encuesta', [FormularioPublicoController::class, 'encuesta'])
+        ->middleware('throttle:20,10')
+        ->name('encuesta');
     Route::get('/qr', [FormularioPublicoController::class, 'qr'])->name('qr');
     Route::get('/qr/descargar', [FormularioPublicoController::class, 'qrDownload'])->name('qr.download');
 });
@@ -162,6 +166,9 @@ Route::middleware(['auth', 'cuenta.activa'])->group(function () {
         Route::resource('motivos', MotivoPqrsdController::class)
             ->parameters(['motivos' => 'motivo'])
             ->except(['show', 'destroy']);
+        Route::resource('categorias', CategoriaPqrsdController::class)
+            ->parameters(['categorias' => 'categoria'])
+            ->except(['show', 'destroy']);
     });
 
     Route::middleware('permission:areas.manage')->group(function () {
@@ -224,6 +231,8 @@ Route::middleware(['auth', 'cuenta.activa'])->group(function () {
         Route::get('/reportes/indicadores', [IndicadoresPqrsdController::class, 'index'])->name('reportes.indicadores');
         Route::get('/reportes/indicadores/excel', [IndicadoresPqrsdController::class, 'excel'])->name('reportes.indicadores.excel');
         Route::get('/reportes/indicadores/pdf', [IndicadoresPqrsdController::class, 'pdf'])->name('reportes.indicadores.pdf');
+        Route::get('/reportes/expediente/{pqrsd}/pdf', [ReporteController::class, 'expedientePdf'])->name('reportes.expediente.pdf');
+        Route::get('/reportes/expediente/{pqrsd}/zip', [ReporteController::class, 'expedienteZip'])->name('reportes.expediente.zip');
     });
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

@@ -96,6 +96,10 @@ Route::middleware(['auth', 'cuenta.activa'])->group(function () {
         ->middleware('permission:pqrsd.update|pqrsd.manage')
         ->name('pqrsd.adjuntos.store');
 
+    Route::post('/pqrsd/{pqrsd}/contacto-regularizacion', [PqrsdController::class, 'registrarContactoRegularizacion'])
+        ->middleware('permission:pqrsd.update|pqrsd.manage')
+        ->name('pqrsd.contacto-regularizacion');
+
     Route::middleware('permission:pqrsd.update|pqrsd.manage')->group(function () {
         Route::get('/pqrsd/{pqrsd}/remisiones/create', [RemisionInternaController::class, 'create'])
             ->name('pqrsd.remisiones.create');

@@ -28,11 +28,13 @@ class ReporteService
         $total = (clone $query)->count();
 
         $porCumplimiento = (clone $query)
+            ->reorder()
             ->select('estado_cumplimiento', DB::raw('count(*) as total'))
             ->groupBy('estado_cumplimiento')
             ->pluck('total', 'estado_cumplimiento');
 
         $porSede = (clone $query)
+            ->reorder()
             ->leftJoin('sedes', 'sedes.id', '=', 'pqrsd.sede_id')
             ->select(DB::raw("COALESCE(sedes.nombre, 'Sin sede') as etiqueta"), DB::raw('count(*) as total'))
             ->groupBy('etiqueta')
@@ -40,6 +42,7 @@ class ReporteService
             ->get();
 
         $porEps = (clone $query)
+            ->reorder()
             ->leftJoin('aseguradoras', 'aseguradoras.id', '=', 'pqrsd.aseguradora_id')
             ->select(DB::raw("COALESCE(aseguradoras.nombre, 'Sin EPS') as etiqueta"), DB::raw('count(*) as total'))
             ->groupBy('etiqueta')
@@ -47,6 +50,7 @@ class ReporteService
             ->get();
 
         $porTipo = (clone $query)
+            ->reorder()
             ->leftJoin('tipos_pqrsd', 'tipos_pqrsd.id', '=', 'pqrsd.tipo_pqrsd_id')
             ->select(DB::raw("COALESCE(tipos_pqrsd.nombre, 'Sin tipo') as etiqueta"), DB::raw('count(*) as total'))
             ->groupBy('etiqueta')
@@ -54,12 +58,14 @@ class ReporteService
             ->get();
 
         $porRiesgo = (clone $query)
+            ->reorder()
             ->select('nivel_riesgo as etiqueta', DB::raw('count(*) as total'))
             ->groupBy('nivel_riesgo')
             ->orderByDesc('total')
             ->get();
 
         $porResponsable = (clone $query)
+            ->reorder()
             ->leftJoin('users', 'users.id', '=', 'pqrsd.responsable_id')
             ->select(DB::raw("COALESCE(users.name, 'Sin responsable') as etiqueta"), DB::raw('count(*) as total'))
             ->groupBy('etiqueta')

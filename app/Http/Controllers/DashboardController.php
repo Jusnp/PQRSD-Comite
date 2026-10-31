@@ -62,6 +62,7 @@ class DashboardController extends Controller
             ->get();
 
         $porCanal = (clone $base)
+            ->reorder()
             ->leftJoin('canales_ingreso', 'canales_ingreso.id', '=', 'pqrsd.canal_ingreso_id')
             ->select(DB::raw("COALESCE(canales_ingreso.nombre,'Sin canal') as etiqueta"), DB::raw('count(*) as total'))
             ->groupBy('etiqueta')

@@ -81,6 +81,10 @@ No incluyen datos clínicos reales ni credenciales productivas.
 - UI: Cuentas correo + Bandeja de revisión
 - Proveedor real (IMAP / Microsoft Graph) cableado pero bloqueado hasta confirmar tenant/host
 
+## Docker con PostgreSQL
+
+Docker con PostgreSQL publica la aplicación en `http://127.0.0.1:8010` y usa la base `pqrsd_postgres_dev`. No sustituye a MariaDB `pqrsd_menteplena`. La guía está en `docs/docker-postgresql.md`.
+
 ## Pendiente (fases siguientes)
 
 - Activar IMAP/Graph con credenciales institucionales reales

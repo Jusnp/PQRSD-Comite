@@ -1,6 +1,8 @@
 <?php
 
 return [
+    // Permanece apagado. Solo se activa durante una ventana de corte ya autorizada.
+    'suspender_radicacion' => filter_var(env('PQRSD_SUSPENDER_RADICACION', false), FILTER_VALIDATE_BOOL),
     'backup_retention_days' => (int) env('PQRSD_BACKUP_RETENTION_DAYS', 30),
     'backup_path' => env('PQRSD_BACKUP_PATH', storage_path('app/private/backups')),
     'worker_heartbeat_max_seconds' => (int) env('PQRSD_WORKER_HEARTBEAT_MAX', 120),

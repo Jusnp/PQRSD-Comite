@@ -4,20 +4,28 @@ namespace App\Http\Controllers;
 
 use App\Models\ActuacionPqrsd;
 use App\Models\Aseguradora;
+use App\Models\AuditoriaPqrsd;
 use App\Models\CanalIngreso;
 use App\Models\CategoriaPqrsd;
+use App\Models\ContactoRegularizacionRadicado;
 use App\Models\MotivoPqrsd;
 use App\Models\SubcategoriaPqrsd;
 use App\Models\Pqrsd;
+use App\Models\RadicadoAlias;
 use App\Models\Sede;
 use App\Models\TipoPqrsd;
 use App\Models\User;
 use App\Services\AdjuntoPqrsdService;
 use App\Services\PqrsdService;
+use App\Services\ResolucionRadicado;
 use App\Services\VencimientoService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class PqrsdController extends Controller
@@ -51,34 +59,51 @@ class PqrsdController extends Controller
         }
 
         if ($request->filled('q')) {
-            $q = $request->string('q');
+            $q = (string) $request->string('q');
             $query->where(function ($builder) use ($q) {
-                $builder->where('radicado', 'like', "%{$q}%")
-                    ->orWhere('solicitante_nombre', 'like', "%{$q}%")
-                    ->orWhere('paciente_nombre', 'like', "%{$q}%");
-            });
-        }
-
-        if ($request->filled('documento')) {
-            $numero = preg_replace('/\D+/', '', (string) $request->string('documento')) ?? '';
-            if ($numero === '') {
-                return back()->withErrors(['documento' => 'Ingrese el número de documento, sin letras.']);
-            }
-            $tipoDoc = $request->filled('tipo_documento') ? (string) $request->string('tipo_documento') : null;
-            $query->where(function ($builder) use ($numero, $tipoDoc) {
-                foreach (['solicitante', 'paciente'] as $quien) {
-                    $builder->orWhere(function ($inner) use ($quien, $numero, $tipoDoc) {
-                        $columna = $quien.'_documento';
-                        $inner->whereRaw(
-                            "REPLACE(REPLACE(REPLACE({$columna}, ' ', ''), '-', ''), '.', '') = ?",
-                            [$numero]
-                        );
-                        if ($tipoDoc) {
-                            $inner->where($quien.'_tipo_documento', $tipoDoc);
-                        }
+                $builder->whereLike('radicado', '%'.$q.'%')
+                    ->orWhereLike('solicitante_nombre', '%'.$q.'%')
+                    ->orWhereLike('paciente_nombre', '%'.$q.'%');
+                if (Schema::hasTable('radicados_alias')) {
+                    $builder->orWhereIn('id', function ($sub) use ($q) {
+                        $sub->select('pqrsd_id')
+                            ->from('radicados_alias')
+                            ->where('radicado', 'like', '%'.mb_strtoupper($q).'%');
                     });
                 }
             });
+        }
+
+        $cedula = preg_replace('/\D+/', '', (string) $request->string('cedula')) ?? '';
+        if ($request->filled('cedula') && $cedula === '') {
+            return back()->withErrors(['cedula' => 'Ingrese el número de la cédula, sin letras.']);
+        }
+
+        $tipoAvanzado = (string) $request->string('tipo_documento');
+        $documentoAvanzado = preg_replace('/\D+/', '', (string) $request->string('documento')) ?? '';
+        $documentoEsCedula = $request->filled('documento') && $tipoAvanzado === 'CC';
+        if ($documentoEsCedula) {
+            if ($documentoAvanzado === '') {
+                return back()->withErrors(['documento' => 'Ingrese el número de documento, sin letras.']);
+            }
+            $cedula = $cedula !== '' ? $cedula : $documentoAvanzado;
+        }
+
+        if ($cedula !== '') {
+            $this->restringirPorDocumento($query, $cedula, 'CC');
+        }
+
+        $tiposAvanzados = array_keys($this->tiposDocumentoAvanzados());
+        if ($request->filled('documento') && ! $documentoEsCedula) {
+            if ($documentoAvanzado === '') {
+                return back()->withErrors(['documento' => 'Ingrese el número de documento, sin letras.']);
+            }
+            if (! in_array($tipoAvanzado, $tiposAvanzados, true)) {
+                return back()->withErrors(['tipo_documento' => 'Seleccione TI, registro civil, cédula de extranjería, pasaporte o PPT.']);
+            }
+            $this->restringirPorDocumento($query, $documentoAvanzado, $tipoAvanzado);
+        } elseif ($request->filled('tipo_documento') && ! $documentoEsCedula) {
+            return back()->withErrors(['documento' => 'Ingrese el número de documento, sin letras.']);
         }
 
         if ($request->string('clasificacion') === 'sin_clasificar') {
@@ -153,28 +178,45 @@ class PqrsdController extends Controller
             'nivel_riesgo' => $query->orderBy('nivel_riesgo', $dir),
             'radicado' => $query->orderBy('radicado', $dir),
             default => $query
-                ->orderByRaw("CASE
-                    WHEN alerta_vital_preventiva = 1 AND nivel_riesgo = 'pendiente' THEN 0
+                ->orderByRaw('CASE
+                    WHEN '.$this->sqlVerdadero('alerta_vital_preventiva')." AND nivel_riesgo = 'pendiente' THEN 0
                     WHEN estado_cumplimiento = 'vencido' THEN 1
                     WHEN estado_cumplimiento = 'proximo_vencer' THEN 2
-                    WHEN estado_operativo = 'pendiente_clasificacion' OR nivel_riesgo = 'pendiente' OR estado_cumplimiento = 'sin_clasificar' OR ciudadano_no_clasifica = 1 THEN 3
+                    WHEN estado_operativo = 'pendiente_clasificacion' OR nivel_riesgo = 'pendiente' OR estado_cumplimiento = 'sin_clasificar' OR ".$this->sqlVerdadero('ciudadano_no_clasifica')." THEN 3
                     WHEN nivel_riesgo IN ('vital_menor', 'vital_general') THEN 4
                     WHEN estado_operativo IN ('asignado', 'en_gestion', 'radicado') THEN 5
                     ELSE 6
                 END")
-                ->orderByRaw("CASE
-                    WHEN (alerta_vital_preventiva = 1 AND nivel_riesgo = 'pendiente')
+                ->orderByRaw('CASE
+                    WHEN ('.$this->sqlVerdadero('alerta_vital_preventiva')." AND nivel_riesgo = 'pendiente')
                         OR estado_operativo = 'pendiente_clasificacion'
                         OR nivel_riesgo = 'pendiente'
-                        OR ciudadano_no_clasifica = 1
+                        OR ".$this->sqlVerdadero('ciudadano_no_clasifica').'
                     THEN fecha_recepcion
                     ELSE NULL
-                END ASC")
+                END ASC')
                 ->orderBy('fecha_limite')
                 ->orderByDesc('fecha_recepcion'),
         };
 
         $items = $query->paginate(15)->withQueryString();
+        $aliasPorExpediente = collect();
+        $aliasPorNumero = collect();
+        if (Schema::hasTable('radicados_alias') && $items->isNotEmpty()) {
+            $aliasPorExpediente = RadicadoAlias::query()
+                ->whereIn('pqrsd_id', $items->pluck('id'))
+                ->get()
+                ->keyBy('pqrsd_id');
+            $aliasPorNumero = RadicadoAlias::query()
+                ->with('pqrsd:id,radicado')
+                ->whereIn('radicado', $items->pluck('radicado'))
+                ->get()
+                ->groupBy('radicado');
+        }
+        $termino = trim((string) $request->string('q'));
+        $avisoRadicadoCompartido = $termino !== '' && app(ResolucionRadicado::class)->cantidad($termino) > 1
+            ? 'Este número es el radicado oficial de un expediente y el alias histórico de otro. Se muestran los dos. Confirme el radicado oficial antes de actuar.'
+            : null;
 
         $motivosQuery = MotivoPqrsd::where('activo', true)->orderBy('nombre');
         if ($request->filled('tipo_pqrsd_id')) {
@@ -189,18 +231,22 @@ class PqrsdController extends Controller
             || $request->filled('es_anonimo')
             || $request->filled('medio_respuesta')
             || $request->filled('documento')
+            || $request->filled('tipo_documento')
             || $request->filled('clasificacion')
             || $request->boolean('avanzados');
 
         return view('pqrsd.index', [
             'items' => $items,
+            'aliasPorExpediente' => $aliasPorExpediente,
+            'aliasPorNumero' => $aliasPorNumero,
+            'avisoRadicadoCompartido' => $avisoRadicadoCompartido,
             'sedes' => Sede::orderBy('nombre')->get(),
             'aseguradoras' => Aseguradora::orderBy('nombre')->get(),
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
             'motivos' => $motivosQuery->get(),
             'canales' => CanalIngreso::where('activo', true)->orderBy('nombre')->get(),
             'mediosRespuesta' => \App\Support\MedioRespuesta::paraConsulta(),
-            'tiposDocumento' => config('pqrsd_publico.tipos_documento', []),
+            'tiposDocumentoAvanzados' => $this->tiposDocumentoAvanzados(),
             'resumen' => app(\App\Services\IndicadoresPqrsdService::class)->resumenOperativo(
                 Pqrsd::query()->when(! Auth::user()->can('pqrsd.view_all'), function ($q) {
                     $uid = Auth::id();
@@ -286,6 +332,26 @@ class PqrsdController extends Controller
             'remisionesInternas.responsableSeguimiento',
         ]);
 
+        $aliasPropio = null;
+        $aliasAjeno = null;
+        $contactosRegularizacion = collect();
+        if (Schema::hasTable('radicados_alias')) {
+            $aliasPropio = RadicadoAlias::query()->where('pqrsd_id', $pqrsd->id)->first();
+            $aliasAjeno = RadicadoAlias::query()
+                ->with('pqrsd:id,radicado')
+                ->where('radicado', $pqrsd->radicado)
+                ->where('pqrsd_id', '!=', $pqrsd->id)
+                ->first();
+        }
+        if (Schema::hasTable('contactos_regularizacion_radicado')) {
+            $contactosRegularizacion = ContactoRegularizacionRadicado::query()
+                ->with('usuario:id,name')
+                ->where('pqrsd_id', $pqrsd->id)
+                ->latest()
+                ->get();
+        }
+        $regularizacion = $pqrsd->auditorias->firstWhere('accion', 'regularizacion_radicado');
+
         $plazo = $this->vencimientoService->snapshot($pqrsd);
         $notificaciones = \App\Models\NotificacionPqrsd::where('pqrsd_id', $pqrsd->id)
             ->latest()
@@ -295,12 +361,57 @@ class PqrsdController extends Controller
         return view('pqrsd.show', [
             'pqrsd' => $pqrsd,
             'plazo' => $plazo,
+            'aliasPropio' => $aliasPropio,
+            'aliasAjeno' => $aliasAjeno,
+            'regularizacion' => $regularizacion,
+            'contactosRegularizacion' => $contactosRegularizacion,
             'notificaciones' => $notificaciones,
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
             'categorias' => CategoriaPqrsd::with('subcategorias')->where('activo', true)->orderBy('orden')->get(),
             'motivos' => MotivoPqrsd::with('subcategoriaSugerida.categoria')->where('activo', true)->orderBy('nombre')->get(),
             'areas' => \App\Models\AreaInstitucional::where('activo', true)->orderBy('orden')->orderBy('nombre')->get(),
         ]);
+    }
+
+    public function registrarContactoRegularizacion(Request $request, Pqrsd $pqrsd): RedirectResponse
+    {
+        $this->authorize('update', $pqrsd);
+
+        if (! Schema::hasTable('radicados_alias')
+            || ! RadicadoAlias::query()->where('pqrsd_id', $pqrsd->id)->exists()) {
+            abort(404);
+        }
+
+        $data = $request->validate([
+            'fecha_contacto' => ['required', 'date'],
+            'resultado' => ['required', Rule::in(['contactado', 'no_contactado', 'numero_no_valido'])],
+            'observacion' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        ContactoRegularizacionRadicado::query()->create([
+            'pqrsd_id' => $pqrsd->id,
+            'usuario_id' => Auth::id(),
+            'medio' => 'telefono',
+            'resultado' => $data['resultado'],
+            'fecha_contacto' => $data['fecha_contacto'],
+            'observacion' => $data['observacion'] ?? null,
+        ]);
+
+        AuditoriaPqrsd::query()->create([
+            'pqrsd_id' => $pqrsd->id,
+            'usuario_id' => Auth::id(),
+            'accion' => 'contacto_regularizacion_radicado',
+            'entidad' => 'pqrsd',
+            'entidad_id' => $pqrsd->id,
+            'despues' => [
+                'medio' => 'telefono',
+                'resultado' => $data['resultado'],
+            ],
+            'ip' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 255),
+        ]);
+
+        return back()->with('success', 'Quedó registrado el contacto telefónico. El radicado no cambió y este registro no sustituye la llamada.');
     }
 
     public function clasificar(Request $request, Pqrsd $pqrsd): RedirectResponse
@@ -601,6 +712,39 @@ class PqrsdController extends Controller
         };
 
         return back()->with('success', $mensaje);
+    }
+
+    /**
+     * @param  Builder<Pqrsd>  $query
+     */
+    private function restringirPorDocumento(Builder $query, string $numero, string $tipo): void
+    {
+        $query->where(function ($builder) use ($numero, $tipo) {
+            foreach (['solicitante', 'paciente'] as $quien) {
+                $builder->orWhere(function ($inner) use ($quien, $numero, $tipo) {
+                    $columna = $quien.'_documento';
+                    $inner->whereRaw(
+                        "REPLACE(REPLACE(REPLACE({$columna}, ' ', ''), '-', ''), '.', '') = ?",
+                        [$numero]
+                    )->where($quien.'_tipo_documento', $tipo);
+                });
+            }
+        });
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function tiposDocumentoAvanzados(): array
+    {
+        return array_diff_key(config('pqrsd_publico.tipos_documento', []), ['CC' => true]);
+    }
+
+    private function sqlVerdadero(string $columna): string
+    {
+        return DB::connection()->getDriverName() === 'pgsql'
+            ? $columna.' IS TRUE'
+            : $columna.' = 1';
     }
 
     private function formData(): array

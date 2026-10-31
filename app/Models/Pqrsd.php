@@ -397,4 +397,14 @@ class Pqrsd extends Model
     {
         return $this->hasMany(MensajeCorreo::class, 'pqrsd_id')->orderBy('fecha_mensaje');
     }
+
+    public function aliasRadicado(): HasOne
+    {
+        return $this->hasOne(RadicadoAlias::class, 'pqrsd_id');
+    }
+
+    public function contactosRegularizacion(): HasMany
+    {
+        return $this->hasMany(ContactoRegularizacionRadicado::class, 'pqrsd_id')->latest();
+    }
 }

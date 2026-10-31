@@ -28,17 +28,9 @@
         <input type="hidden" name="dir" value="{{ $dir }}">
         <div class="full"><strong>Filtros principales</strong></div>
         <div>
-            <label class="form-label" for="tipo_documento">Tipo de documento</label>
-            <select class="form-select" id="tipo_documento" name="tipo_documento">
-                <option value="">Cualquiera</option>
-                @foreach($tiposDocumento as $codigo => $etiqueta)
-                    <option value="{{ $codigo }}" @selected(request('tipo_documento') === $codigo)>{{ $etiqueta }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div>
-            <label class="form-label" for="documento">Número de documento</label>
-            <input class="form-input" id="documento" name="documento" value="{{ request('documento') }}" inputmode="numeric" autocomplete="off">
+            <label class="form-label" for="cedula">Buscar por cédula (CC)</label>
+            <input class="form-input" id="cedula" name="cedula" value="{{ request('cedula') }}" inputmode="numeric" autocomplete="off" placeholder="Número de cédula">
+            <p class="form-help">Busca en el documento del solicitante y del paciente. El listado no muestra el número.</p>
         </div>
         <div>
             <label class="form-label" for="clasificacion">Clasificación</label>
@@ -106,6 +98,20 @@
         <div id="filtros-avanzados" class="form-grid full filtros-avanzados" @if(! $avanzadosAbiertos) hidden @endif>
             <input type="hidden" name="avanzados" value="{{ $avanzadosAbiertos ? '1' : '0' }}" id="input-avanzados">
             <div class="full"><strong>Más filtros</strong></div>
+            <div>
+                <label class="form-label" for="tipo_documento">Otro documento</label>
+                <select class="form-select" id="tipo_documento" name="tipo_documento">
+                    <option value="">Seleccione</option>
+                    @foreach($tiposDocumentoAvanzados as $codigo => $etiqueta)
+                        <option value="{{ $codigo }}" @selected(request('tipo_documento') === $codigo)>{{ $etiqueta }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div>
+                <label class="form-label" for="documento">Número (TI, RC, CE, pasaporte o PPT)</label>
+                <input class="form-input" id="documento" name="documento" value="{{ request('documento') }}" inputmode="numeric" autocomplete="off">
+                <p class="form-help">Para expedientes de menores, cuidadores u otros documentos. La cédula se busca arriba. Esos tipos siguen disponibles al radicar.</p>
+            </div>
             <div>
                 <label class="form-label" for="motivo_pqrsd_id">Motivo</label>
                 <select class="form-select" id="motivo_pqrsd_id" name="motivo_pqrsd_id">
@@ -193,6 +199,9 @@
         @endif
     </div>
 @endif
+@if(!empty($avisoRadicadoCompartido))
+    <div class="alert alert-warning" role="status">{{ $avisoRadicadoCompartido }}</div>
+@endif
 @if(($resumen['alertas_vitales_preventivas'] ?? 0) > 0)
     <div class="alert alert-warning" role="status">Hay {{ $resumen['alertas_vitales_preventivas'] }} solicitudes sin clasificar con alerta preventiva de posible riesgo vital. Revíselas primero. El plazo formal se calcula al clasificar, desde la recepción original.</div>
 @endif
@@ -241,6 +250,19 @@
                     <tr class="{{ $rowClass }}">
                         <td class="col-radicado">
                             <a class="radicado-link" href="{{ route('pqrsd.show', $caso) }}">{{ $caso->radicado }}</a>
+                            @php
+                                $aliasPropio = $aliasPorExpediente[$caso->id] ?? null;
+                                $aliasAjenos = collect($aliasPorNumero[$caso->radicado] ?? [])->where('pqrsd_id', '!=', $caso->id);
+                            @endphp
+                            @if($aliasPropio)
+                                <div class="muted">Radicado oficial: {{ $caso->radicado }}</div>
+                                <div class="muted">Alias histórico: {{ $aliasPropio->radicado }}</div>
+                            @endif
+                            @if($aliasAjenos->isNotEmpty())
+                                <div class="muted">Radicado oficial de este expediente. El mismo número es alias histórico de
+                                    {{ $aliasAjenos->map(fn ($alias) => $alias->pqrsd?->radicado)->filter()->implode(', ') }}.
+                                </div>
+                            @endif
                             @if($caso->pendienteDeClasificacion())<span class="badge-pendiente">Pendiente de clasificación</span>@endif
                             @if($caso->alerta_vital_preventiva && $caso->nivel_riesgo === 'pendiente')<span class="badge-vital">Revisión prioritaria</span>@endif
                             @if($caso->esperaSuperaPlazoMasCorto())<span class="badge-vital">Espera crítica</span>@endif

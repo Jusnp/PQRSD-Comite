@@ -277,6 +277,8 @@
         <legend>Tratamiento de datos</legend>
         @php
             $politicaUrl = trim((string) config('identidad.politica_tratamiento_url'));
+            $politicaSitio = trim((string) config('identidad.politica_sitio_url'));
+            $politicaSeccion = trim((string) config('identidad.politica_sitio_seccion', 'Contacto / PQRS'));
             $politicaVersion = trim((string) config('identidad.politica_tratamiento_version'));
             $politicaPublicada = $politicaUrl !== '' && $politicaVersion !== '';
         @endphp
@@ -284,7 +286,16 @@
             <div id="bloque-autorizacion-identificada">
                 <label style="display:flex;gap:8px;align-items:flex-start;font-weight:700">
                     <input type="checkbox" id="acepto_tratamiento_datos" name="acepto_tratamiento_datos" value="1" @checked(old('acepto_tratamiento_datos'))>
-                    <span>{{ config('identidad.textos.tratamiento_datos') }} <span class="required">*</span></span>
+                    <span>
+                        {{ config('identidad.textos.tratamiento_datos') }}
+                        @if($politicaSitio !== '')
+                            Puede abrirla en el
+                            <a href="{{ $politicaSitio }}" target="_blank" rel="noopener noreferrer">sitio oficial del Comité</a>
+                            (sección {{ $politicaSeccion }}).
+                        @endif
+                        <a href="{{ $politicaUrl }}" target="_blank" rel="noopener noreferrer">Consultar el documento PDF</a>.
+                        <span class="required">*</span>
+                    </span>
                 </label>
                 @error('acepto_tratamiento_datos')<div class="field-error">{{ $message }}</div>@enderror
                 <p class="form-help">

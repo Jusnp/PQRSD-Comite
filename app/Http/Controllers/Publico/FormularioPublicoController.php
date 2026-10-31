@@ -15,6 +15,7 @@ use App\Services\ConflictoIdempotenciaPublica;
 use App\Services\IdempotenciaRadicacionPublica;
 use App\Services\EncuestaSatisfaccionService;
 use App\Services\PqrsdService;
+use App\Services\ResolucionRadicado;
 use App\Support\EstadoPublicoPqrsd;
 use App\Support\TelefonoColombia;
 use App\Support\PublicUrl;
@@ -437,7 +438,12 @@ class FormularioPublicoController extends Controller
         RateLimiter::hit($key, $ventana);
 
         $radicado = strtoupper(trim($data['radicado']));
-        $caso = Pqrsd::query()->where('radicado', $radicado)->first();
+        $resolucion = app(ResolucionRadicado::class);
+        if ($resolucion->esAmbiguoParaCiudadano($radicado)) {
+            return view('publico.consulta-ambigua');
+        }
+
+        $caso = $resolucion->consultaPublica($radicado);
 
         if (! $caso) {
             return back()->withErrors([
@@ -482,10 +488,7 @@ class FormularioPublicoController extends Controller
         }
         RateLimiter::hit($key, 300);
 
-        $caso = Pqrsd::query()
-            ->where('radicado', strtoupper(trim($data['radicado'])))
-            ->where('consulta_token_hash', hash('sha256', $data['token']))
-            ->first();
+        $caso = app(ResolucionRadicado::class)->consultaSegura($data['radicado'], $data['token']);
 
         if (! $caso) {
             return back()->withErrors([
@@ -514,10 +517,7 @@ class FormularioPublicoController extends Controller
             'comentario' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $caso = Pqrsd::query()
-            ->where('radicado', strtoupper(trim($data['radicado'])))
-            ->where('consulta_token_hash', hash('sha256', $data['token']))
-            ->first();
+        $caso = app(ResolucionRadicado::class)->consultaSegura($data['radicado'], $data['token']);
 
         if (! $caso) {
             return back()->withErrors([

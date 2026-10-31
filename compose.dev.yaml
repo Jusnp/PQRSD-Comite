@@ -1,0 +1,79 @@
+name: pqrsd-postgres
+
+services:
+  postgres:
+    image: postgres:16.10-bookworm
+    environment:
+      POSTGRES_DB: pqrsd_postgres_dev
+      POSTGRES_USER: ${POSTGRES_USER:?Defina POSTGRES_USER en .env.docker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en .env.docker}
+      PQRSD_TEST_DB_PASSWORD: ${PQRSD_TEST_DB_PASSWORD:?Defina PQRSD_TEST_DB_PASSWORD en .env.docker}
+      TZ: America/Bogota
+      PGTZ: America/Bogota
+    volumes:
+      - pqrsd_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d pqrsd_postgres_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - pqrsd
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+    env_file:
+      - .env.docker
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: pqrsd_postgres_dev
+      DB_USERNAME: ${POSTGRES_USER:?Defina POSTGRES_USER en .env.docker}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en .env.docker}
+      APP_URL: http://127.0.0.1:8010
+      PQRSD_DEV_URL: http://127.0.0.1:8010
+      AUTHENTIK_REDIRECT_URI: http://127.0.0.1:8010/auth/authentik/callback
+      AUTHENTIK_PROVISIONING_ENABLED: "false"
+      PQRSD_TEST_DB_USERNAME: pqrsd_test
+      PQRSD_TEST_DB_PASSWORD: ${PQRSD_TEST_DB_PASSWORD:?Defina PQRSD_TEST_DB_PASSWORD en .env.docker}
+      MAIL_MAILER: log
+    volumes:
+      - pqrsd_storage:/var/www/html/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - pqrsd
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    ports:
+      - "127.0.0.1:8010:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - pqrsd
+
+networks:
+  pqrsd:
+    name: pqrsd_postgres_net
+
+volumes:
+  pqrsd_postgres_data:
+    name: pqrsd_postgres_data
+  pqrsd_storage:
+    name: pqrsd_storage

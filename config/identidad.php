@@ -53,6 +53,10 @@ return [
      * Vacía en pruebas. No se sustituye por la política de otra institución
      * ni por un texto inventado solo para PQRSD.
      */
+    'politica_sitio_url' => env('POLITICA_SITIO_URL', 'https://comitedeestudiosmedicos.com.co/'),
+
+    'politica_sitio_seccion' => 'Contacto / PQRS',
+
     'politica_tratamiento_url' => env('POLITICA_TRATAMIENTO_URL', ''),
 
     'politica_tratamiento_version' => env('POLITICA_TRATAMIENTO_VERSION', ''),

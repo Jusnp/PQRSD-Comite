@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\RadicacionSuspendidaException;
 use App\Models\SecuenciaRadicado;
 use Illuminate\Support\Facades\DB;
 
@@ -9,6 +10,12 @@ class RadicadoGenerator
 {
     public function siguiente(?int $anio = null): string
     {
+        if (config('pqrsd_ops.suspender_radicacion')) {
+            throw new RadicacionSuspendidaException(
+                'La emisión de radicados está suspendida durante el corte de migración.'
+            );
+        }
+
         $anio ??= (int) now('America/Bogota')->format('Y');
 
         return DB::transaction(function () use ($anio) {

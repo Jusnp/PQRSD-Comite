@@ -52,16 +52,30 @@ class MejorasBandejaTipificacionYAuditoriaTest extends TestCase
         $dos = $this->radicar(['solicitante_documento' => '2020202020']);
         $dos->update(['paciente_documento' => '3030303030', 'paciente_tipo_documento' => 'TI']);
 
-        $this->actingAs($admin)
-            ->get(route('pqrsd.index', ['documento' => '1010 101010', 'tipo_documento' => 'CC']))
-            ->assertOk()
+        $cedula = $this->actingAs($admin)
+            ->get(route('pqrsd.index', ['cedula' => '1010 101010']));
+        $cedula->assertOk()
             ->assertSee($uno->radicado)
+            ->assertDontSee($dos->radicado)
+            ->assertSee('Buscar por cédula (CC)', false)
+            ->assertSee('name="cedula"', false)
+            ->assertDontSee('value="CC"', false);
+
+        $this->actingAs($admin)
+            ->get(route('pqrsd.index', ['cedula' => '3030303030']))
+            ->assertOk()
             ->assertDontSee($dos->radicado);
 
         $pagina = $this->actingAs($admin)
             ->get(route('pqrsd.index', ['documento' => '3030303030', 'tipo_documento' => 'TI', 'page' => 1]));
-        $pagina->assertOk()->assertSee($dos->radicado)->assertDontSee($uno->radicado);
+        $pagina->assertOk()
+            ->assertSee($dos->radicado)
+            ->assertDontSee($uno->radicado)
+            ->assertSee('Tarjeta de identidad (TI)', false)
+            ->assertSee('Registro civil (RC)', false)
+            ->assertSee('Pasaporte (PA)', false);
         $this->assertStringContainsString('documento=3030303030', $pagina->getContent());
+        $this->assertDoesNotMatchRegularExpression('/<(td|th)[^>]*>[^<]*3030303030/', $pagina->getContent());
 
         $this->post(route('publico.consulta.store'), ['radicado' => $uno->radicado])
             ->assertOk()
@@ -283,6 +297,8 @@ class MejorasBandejaTipificacionYAuditoriaTest extends TestCase
         $this->get(route('publico.formulario'))
             ->assertOk()
             ->assertSee('no se almacena el teléfono', false)
+            ->assertSee('Tarjeta de identidad (TI)', false)
+            ->assertSee('Registro civil (RC)', false)
             ->assertSee('Política de Tratamiento de Datos Personales')
             ->assertSee('pendiente de publicación oficial')
             ->assertDontSee('name="acepto_tratamiento_datos"', false)
@@ -327,9 +343,18 @@ class MejorasBandejaTipificacionYAuditoriaTest extends TestCase
         $this->get(route('publico.formulario'))
             ->assertOk()
             ->assertSee('Consultar Política de Tratamiento de Datos Personales', false)
+            ->assertSee('Consultar el documento PDF', false)
+            ->assertSee('https://comitedeestudiosmedicos.com.co/', false)
+            ->assertSee('Contacto / PQRS', false)
             ->assertSee('target="_blank"', false)
+            ->assertSee('rel="noopener noreferrer"', false)
             ->assertSee('PO-GJ-JUR-001', false)
+            ->assertSee('https://comitedeestudiosmedicos.com.co/wp-content/uploads/2026/08/PO-GJ-JUR-001-Politica-para-el-tratamiento-de-datos-personales-V01-1-1.pdf', false)
             ->assertDontSee('pendiente de publicación oficial', false);
+        $this->assertMatchesRegularExpression(
+            '/id="acepto_tratamiento_datos"(?![^>]*\bchecked\b)[^>]*>/',
+            $this->get(route('publico.formulario'))->getContent()
+        );
 
         $this->post(route('publico.store'), $this->payloadPublico([
             'es_anonimo' => '1',

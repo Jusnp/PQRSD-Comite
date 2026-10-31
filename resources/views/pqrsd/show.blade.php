@@ -103,6 +103,61 @@
         <div>
             <p class="exp-kicker" id="exp-resumen-titulo">Resumen del radicado</p>
             <h2 class="exp-radicado">{{ $pqrsd->radicado }}</h2>
+            @if($aliasPropio)
+                <div class="alert alert-warning" role="status">
+                    <p><strong>Regularización de radicado.</strong> El radicado oficial de este expediente es {{ $pqrsd->radicado }}. El número anterior queda como alias histórico: {{ $aliasPropio->radicado }}.</p>
+                    <p>Motivo del alias: {{ $aliasPropio->motivo }}.</p>
+                    @if($regularizacion)
+                        <p>
+                            Registro de auditoría: {{ $regularizacion->created_at?->timezone('America/Bogota')->format('d/m/Y H:i') ?? 'sin fecha' }}.
+                            Responsable de la decisión autorizada: {{ $regularizacion->usuario?->name ?? 'Pendiente de autorización. Ningún funcionario quedó registrado.' }}
+                            @if(($regularizacion->despues['ejecucion'] ?? null) === 'proceso_tecnico')
+                                La ejecutó el proceso técnico de corte. No consta un inicio de sesión para este cambio.
+                            @endif
+                        </p>
+                    @else
+                        <p>Responsable de la decisión: pendiente de autorización.</p>
+                    @endif
+                    <p>Los textos históricos que mencionan el número anterior se conservan.</p>
+                    @if($contactosRegularizacion->isEmpty())
+                        <p>No hay registro de contacto telefónico. No consta que el ciudadano haya sido informado del número nuevo.</p>
+                    @else
+                        <p>Contactos telefónicos registrados por el personal:</p>
+                        <ul>
+                            @foreach($contactosRegularizacion as $contacto)
+                                <li>
+                                    {{ $contacto->fecha_contacto?->timezone('America/Bogota')->format('d/m/Y H:i') }}
+                                    — {{ $contacto->etiquetaResultado() }}
+                                    @if($contacto->usuario) — {{ $contacto->usuario->name }} @endif
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
+                    @can('update', $pqrsd)
+                        <form method="POST" action="{{ route('pqrsd.contacto-regularizacion', $pqrsd) }}" class="exp-form-narrow">
+                            @csrf
+                            <p>Registrar la comunicación real del número nuevo. No se completa sola.</p>
+                            <label for="fecha_contacto">Fecha del contacto</label>
+                            <input id="fecha_contacto" name="fecha_contacto" type="datetime-local" required value="{{ old('fecha_contacto') }}">
+                            <label for="resultado_contacto">Resultado</label>
+                            <select id="resultado_contacto" name="resultado" required>
+                                <option value="">Seleccione</option>
+                                <option value="contactado" @selected(old('resultado') === 'contactado')>Contactado</option>
+                                <option value="no_contactado" @selected(old('resultado') === 'no_contactado')>No fue posible el contacto</option>
+                                <option value="numero_no_valido" @selected(old('resultado') === 'numero_no_valido')>El número no es válido</option>
+                            </select>
+                            <label for="observacion_contacto">Observación</label>
+                            <textarea id="observacion_contacto" name="observacion" maxlength="500">{{ old('observacion') }}</textarea>
+                            <button class="btn btn-secondary" type="submit">Guardar contacto</button>
+                        </form>
+                    @endcan
+                </div>
+            @endif
+            @if($aliasAjeno)
+                <div class="alert alert-warning" role="status">
+                    <p>Este es el radicado oficial de este expediente. El mismo número está registrado como alias histórico del expediente {{ $aliasAjeno->pqrsd?->radicado }}.</p>
+                </div>
+            @endif
             <p class="muted exp-summary-meta">
                 {{ $pqrsd->tipo?->nombre ?? 'Tipo pendiente' }}
                 · {{ $pqrsd->motivo?->nombre ?? 'Sin motivo' }}

@@ -181,3 +181,5 @@ Para un servidor institucional haría falta, además, una decisión de la entida
 - Límites de red: PostgreSQL y PHP-FPM siguen sin puerto público; solo Nginx publica el HTTP o, mejor, queda detrás del proxy institucional.
 
 No declare este entorno como producción por el hecho de que los contenedores estén encendidos.
+
+El despliegue en el VPS usa `Dockerfile.prod`, `compose.prod.yaml` y `docs/despliegue-vps.md`. No reutilice este Compose de desarrollo en el servidor.

@@ -1,0 +1,100 @@
+name: pqrsd-prod
+
+services:
+  postgres:
+    image: postgres:16.10-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pqrsd_prod}
+      POSTGRES_USER: ${POSTGRES_USER:?Defina POSTGRES_USER en el entorno de produccion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en el entorno de produccion}
+      PQRSD_APP_DB_PASSWORD: ${PQRSD_APP_DB_PASSWORD:?Defina PQRSD_APP_DB_PASSWORD en el entorno de produccion}
+      TZ: America/Bogota
+      PGTZ: America/Bogota
+    volumes:
+      - pqrsd_prod_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-prod:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - pqrsd
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      target: app
+    image: pqrsd-prod-app:${PQRSD_IMAGE_TAG:-local}
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY:?Defina APP_KEY en el entorno de produccion}
+      APP_URL: ${APP_URL:?Defina APP_URL en HTTPS}
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: ${POSTGRES_DB:-pqrsd_prod}
+      DB_USERNAME: pqrsd_app
+      DB_PASSWORD: ${PQRSD_APP_DB_PASSWORD:?Defina PQRSD_APP_DB_PASSWORD en el entorno de produccion}
+      MAIL_MAILER: log
+      PQRSD_MAIL_DRIVER: mock
+      PQRSD_SLA_CORREO_ALERTAS: "false"
+      GMAIL_SERVICE_ACCOUNT_ENABLED: "false"
+      AUTHENTIK_PROVISIONING_ENABLED: "false"
+      AUTHENTIK_REDIRECT_URI: ${AUTHENTIK_REDIRECT_URI:?Defina AUTHENTIK_REDIRECT_URI}
+      PQRSD_PUBLIC_URL: ${PQRSD_PUBLIC_URL:-}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-}
+    volumes:
+      - pqrsd_prod_storage:/var/www/html/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - pqrsd
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      target: web
+    image: pqrsd-prod-web:${PQRSD_IMAGE_TAG:-local}
+    environment:
+      PQRSD_TRUSTED_PROXY_CIDR: ${PQRSD_TRUSTED_PROXY_CIDR:-127.0.0.1}
+    ports:
+      - "127.0.0.1:${PQRSD_HTTP_PORT:-8081}:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - pqrsd
+
+networks:
+  pqrsd:
+    name: pqrsd_prod_net
+
+volumes:
+  pqrsd_prod_data:
+    name: ${PQRSD_VOLUME_DATA:-pqrsd_prod_data}
+  pqrsd_prod_storage:
+    name: ${PQRSD_VOLUME_STORAGE:-pqrsd_prod_storage}

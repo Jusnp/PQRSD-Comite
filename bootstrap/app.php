@@ -22,6 +22,17 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'webhooks/gmail-pubsub',
         ]);
+
+        $middleware->trustProxies(
+            headers: Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_PROTO
+                | Request::HEADER_X_FORWARDED_PORT,
+        );
+
+        $middleware->trustHosts(
+            at: static fn (): array => config('proxy.trusted_hosts', []),
+            subdomains: false,
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

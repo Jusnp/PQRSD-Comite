@@ -11,10 +11,12 @@ use App\Models\TipoPqrsd;
 use App\Services\Authentik\AuthentikApiClient;
 use App\Services\Authentik\FakeAuthentikApiClient;
 use App\Services\Authentik\HttpAuthentikApiClient;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use SocialiteProviders\Authentik\Provider as AuthentikProvider;
@@ -38,6 +40,19 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(function (SocialiteWasCalled $event): void {
             $event->extendSocialite('authentik', AuthentikProvider::class);
         });
+
+        $proxies = config('proxy.trusted_proxies', []);
+        if (is_array($proxies) && $proxies !== []) {
+            TrustProxies::at($proxies);
+        }
+
+        if ($this->app->environment('production')) {
+            $root = rtrim((string) config('app.url'), '/');
+            if (str_starts_with($root, 'https://')) {
+                URL::forceRootUrl($root);
+            }
+            URL::forceScheme('https');
+        }
 
         date_default_timezone_set(config('app.timezone', 'America/Bogota'));
         Paginator::defaultView('vendor.pagination.simple-pqrsd');

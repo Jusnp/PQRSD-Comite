@@ -1,0 +1,41 @@
+# Ejemplo de VirtualHost para PQRSD.
+# No copiarlo a sites-enabled ni recargar Apache hasta la ventana autorizada.
+# No incluye otros sitios. SISPAM sigue en el puerto 8080.
+# Apache escucha 80 y 443. El contenedor solo acepta 127.0.0.1:8081.
+
+<VirtualHost *:80>
+    ServerName pqrsd.comitedeestudiosmedicos.com.co
+
+    RewriteEngine On
+    RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]
+
+    ErrorLog ${APACHE_LOG_DIR}/pqrsd-error.log
+    CustomLog ${APACHE_LOG_DIR}/pqrsd-access.log combined
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName pqrsd.comitedeestudiosmedicos.com.co
+
+    SSLEngine on
+    SSLCertificateFile /etc/letsencrypt/live/pqrsd.comitedeestudiosmedicos.com.co/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/pqrsd.comitedeestudiosmedicos.com.co/privkey.pem
+
+    ProxyRequests Off
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:8081/
+    ProxyPassReverse / http://127.0.0.1:8081/
+
+    # Sustituye lo que haya enviado el navegador. No se reenvía un esquema arbitrario.
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Port "443"
+    RequestHeader unset X-Forwarded-Host
+
+    # 12 MB, igual que el límite de Nginx y de PHP.
+    LimitRequestBody 12582912
+    ProxyTimeout 120
+
+    Header always set Strict-Transport-Security "max-age=31536000"
+
+    ErrorLog ${APACHE_LOG_DIR}/pqrsd-ssl-error.log
+    CustomLog ${APACHE_LOG_DIR}/pqrsd-ssl-access.log combined
+</VirtualHost>

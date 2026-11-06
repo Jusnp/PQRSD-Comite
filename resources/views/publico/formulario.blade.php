@@ -16,6 +16,7 @@
     @csrf
     <input type="hidden" name="via_qr" value="{{ $viaQr ? 1 : 0 }}">
     <input type="hidden" name="idempotency_key" value="{{ old('idempotency_key', $idempotencyKey) }}">
+    <div id="errores-cliente-publico" class="alert alert-error" role="alert" tabindex="-1" hidden></div>
     <div class="visually-hidden" aria-hidden="true">
         <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
     </div>
@@ -360,6 +361,7 @@
     const btn = document.getElementById('btn-enviar-publico');
     const maxFiles = {{ (int) ($adjuntosConfig['max_files'] ?? 5) }};
     const maxBytes = {{ (int) ($adjuntosConfig['max_kb'] ?? 10240) }} * 1024;
+    const extensionesPermitidas = @json(array_values($adjuntosConfig['extensions'] ?? []));
     let files = [];
 
     const fnNac = document.getElementById('paciente_fecha_nacimiento');
@@ -568,10 +570,11 @@
                 });
                 break;
             }
-            if (f.size > maxBytes) {
+            const rechazo = motivoRechazoAdjunto(f);
+            if (rechazo) {
                 window.pqrsdAviso?.({
                     titulo: 'Archivo no admitido',
-                    mensaje: f.name + ' supera el tamaño máximo permitido.',
+                    mensaje: rechazo,
                     variante: 'advertencia',
                 });
                 continue;
@@ -580,6 +583,134 @@
         }
         syncInput();
     });
+
+    function extensionDe(nombre) {
+        const limpio = String(nombre || '').trim().toLowerCase();
+        const punto = limpio.lastIndexOf('.');
+        if (punto < 1 || punto === limpio.length - 1) return '';
+        return limpio.slice(punto + 1);
+    }
+
+    function motivoRechazoAdjunto(archivo) {
+        const extension = extensionDe(archivo.name);
+        if (!extension || extensionesPermitidas.indexOf(extension) === -1) {
+            return 'Extensión no permitida: .' + extension;
+        }
+        // El tipo que informa el navegador no es el contenido. Un DOCX válido
+        // suele llegar como application/octet-stream o application/zip.
+        // La revisión del contenido sigue en el servidor.
+        if (archivo.size > maxBytes) {
+            return archivo.name + ' supera el tamaño máximo permitido.';
+        }
+        return '';
+    }
+
+    function digitosTelefono(valor) {
+        let digitos = String(valor || '').replace(/\D+/g, '');
+        if (digitos.indexOf('57') === 0 && digitos.length > 10) digitos = digitos.slice(2);
+        return digitos;
+    }
+
+    function telefonoValido(valor) {
+        const digitos = digitosTelefono(valor);
+        if (!digitos || /^(\d)\1+$/.test(digitos)) return false;
+        return /^3\d{9}$/.test(digitos) || /^60[1-8]\d{7}$/.test(digitos) || /^[1-8]\d{6}$/.test(digitos);
+    }
+
+    function limpiarErroresCliente() {
+        form?.querySelectorAll('[data-error-cliente]').forEach(el => el.remove());
+        form?.querySelectorAll('[aria-invalid="true"]').forEach(el => el.removeAttribute('aria-invalid'));
+        const resumen = document.getElementById('errores-cliente-publico');
+        if (resumen) {
+            resumen.hidden = true;
+            resumen.innerHTML = '';
+        }
+    }
+
+    function marcarError(campo, mensaje) {
+        if (!campo) return;
+        campo.setAttribute('aria-invalid', 'true');
+        const error = document.createElement('div');
+        error.className = 'field-error';
+        error.dataset.errorCliente = '1';
+        error.setAttribute('role', 'alert');
+        error.id = (campo.id || campo.name || 'campo') + '-error-cliente';
+        error.textContent = mensaje;
+        campo.setAttribute('aria-describedby', error.id);
+        campo.insertAdjacentElement('afterend', error);
+    }
+
+    function validarFormularioCliente() {
+        limpiarErroresCliente();
+        const hallazgos = [];
+        const anonimo = !!anon?.checked;
+        const noClasifica = !!document.getElementById('ciudadano_no_clasifica')?.checked;
+        const quien = document.querySelector('input[name="quien_radica"]:checked');
+        const agregar = (campo, mensaje) => hallazgos.push({ campo, mensaje });
+
+        if (!quien) {
+            agregar(document.getElementById('quien_paciente'), 'Indique si usted es el paciente o presenta la solicitud en nombre de otra persona.');
+        }
+        if (!anonimo) {
+            const nombre = document.getElementById('solicitante_nombre');
+            const tipoDoc = document.getElementById('solicitante_tipo_documento');
+            const documento = document.getElementById('solicitante_documento');
+            const telefono = document.getElementById('solicitante_telefono');
+            if (!nombre?.value.trim()) agregar(nombre, 'Indique su nombre completo.');
+            if (!tipoDoc?.value) agregar(tipoDoc, 'Seleccione el tipo de documento.');
+            if (!documento?.value.trim()) agregar(documento, 'Indique el número de documento.');
+            if (!telefono?.value.trim()) agregar(telefono, 'El teléfono es obligatorio cuando la solicitud no es anónima.');
+            else if (!telefonoValido(telefono.value)) agregar(telefono, 'Ingrese un teléfono móvil o fijo de Colombia. Ejemplo: 3001234567 o 6041234567.');
+        }
+        if (quien?.value === 'tercero') {
+            const relacion = document.getElementById('relacion_paciente');
+            const paciente = document.getElementById('paciente_nombre');
+            const tipoPaciente = document.getElementById('paciente_tipo_documento');
+            const docPaciente = document.getElementById('paciente_documento');
+            if (!anonimo && !relacion?.value.trim()) agregar(relacion, 'Indique la relación con el paciente.');
+            if (!paciente?.value.trim()) agregar(paciente, 'Indique el nombre del paciente.');
+            if (!tipoPaciente?.value) agregar(tipoPaciente, 'Seleccione el tipo de documento del paciente.');
+            if (!docPaciente?.value.trim()) agregar(docPaciente, 'Indique el número de documento del paciente.');
+        }
+        const tipo = document.getElementById('tipo_pqrsd_id');
+        if (!noClasifica && !tipo?.value) agregar(tipo, 'Seleccione el tipo de solicitud.');
+        const asunto = document.getElementById('asunto');
+        const descripcion = document.getElementById('descripcion');
+        if (!asunto?.value.trim()) agregar(asunto, 'Indique el asunto de la manifestación.');
+        else if (asunto.value.trim().length < 5) agregar(asunto, 'El asunto debe tener al menos 5 caracteres.');
+        if (!descripcion?.value.trim() || descripcion.value.trim().length < 20) agregar(descripcion, 'La descripción debe tener al menos 20 caracteres.');
+        if (!medio?.value) agregar(medio, 'Seleccione cómo desea recibir o consultar la respuesta.');
+        if (medio?.value === 'email') {
+            const correo = document.getElementById('solicitante_email');
+            const autorizaCorreo = form?.querySelector('[name="consentimiento_comunicacion_email"]');
+            if (!correo?.value.trim()) agregar(correo, 'Indique el correo electrónico para recibir la respuesta.');
+            if (autorizaCorreo && !autorizaCorreo.checked) agregar(autorizaCorreo, 'Confirme la autorización para utilizar ese correo.');
+        }
+        const autorizacion = document.getElementById('acepto_tratamiento_datos');
+        if (autorizacion && !anonimo && !autorizacion.checked) {
+            agregar(autorizacion, 'Debe aceptar el tratamiento de datos personales (Ley 1581 de 2012).');
+        }
+        hallazgos.forEach(item => marcarError(item.campo, item.mensaje));
+        const resumen = document.getElementById('errores-cliente-publico');
+        if (hallazgos.length && resumen) {
+            resumen.hidden = false;
+            resumen.innerHTML = '<strong>Revise los datos marcados.</strong><ul>' + hallazgos.map(item => '<li>' + item.mensaje + '</li>').join('') + '</ul>';
+        }
+        return hallazgos;
+    }
+
+    form?.addEventListener('input', () => {
+        const resumen = document.getElementById('errores-cliente-publico');
+        if (resumen && !resumen.hidden) validarFormularioCliente();
+    });
+
+    form?.addEventListener('submit', (event) => {
+        const hallazgos = validarFormularioCliente();
+        if (!hallazgos.length) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hallazgos[0].campo?.focus();
+    }, true);
 
     form?.addEventListener('submit', () => {
         if (fnNac && fnNacT && !fnNac.value && fnNacT.value) fnNac.value = fnNacT.value;

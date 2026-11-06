@@ -762,3 +762,46 @@ html[data-theme="dark"] .alert-warning {
     .exp-chips{grid-template-columns:1fr}
     .exp-actions .btn{flex:1 1 100%}
 }
+
+@media (max-width: 768px) {
+    .publico-body .app-header-inner {
+        width: min(100% - 16px, 1260px);
+        min-width: 0;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 8px 10px;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .publico-body .brand-area,
+    .publico-body .header-title,
+    .publico-body .header-actions {
+        min-width: 0;
+    }
+    .publico-body .brand-area {
+        flex: 1 1 12rem;
+        gap: 8px;
+    }
+    .publico-body .header-title h1 {
+        font-size: clamp(1.05rem, 4.6vw, 1.45rem);
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+    }
+    .publico-body .header-title p {
+        margin-top: 2px;
+        font-size: 0.82rem;
+        overflow-wrap: anywhere;
+    }
+    .publico-body .header-actions {
+        flex: 1 1 11rem;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        gap: 8px;
+    }
+    .publico-body .header-actions .btn,
+    .publico-body .header-actions .theme-toggle {
+        max-width: 100%;
+        white-space: normal;
+        text-align: center;
+    }
+}

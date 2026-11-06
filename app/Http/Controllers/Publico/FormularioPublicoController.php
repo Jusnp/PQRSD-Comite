@@ -106,7 +106,14 @@ class FormularioPublicoController extends Controller
         $data = $request->validate([
             'idempotency_key' => ['required', 'uuid'],
             'tipo_pqrsd_id' => [$noClasifica ? 'nullable' : 'required', 'exists:tipos_pqrsd,id'],
-            'motivo_pqrsd_id' => ['nullable', 'exists:motivos_pqrsd,id'],
+            'motivo_pqrsd_id' => [
+                'nullable',
+                Rule::exists('motivos_pqrsd', 'id')->where(
+                    fn ($query) => $query
+                        ->where('tipo_pqrsd_id', $request->input('tipo_pqrsd_id'))
+                        ->where('activo', true)
+                ),
+            ],
             'ciudadano_no_clasifica' => ['sometimes', 'boolean'],
             'es_anonimo' => ['sometimes', 'boolean'],
             'quien_radica' => ['required', Rule::in(['paciente', 'tercero'])],
@@ -186,9 +193,7 @@ class FormularioPublicoController extends Controller
         $canalCodigo = $request->boolean('via_qr') ? 'QR' : 'WEB';
         $canal = CanalIngreso::where('codigo', $canalCodigo)->firstOrFail();
 
-        $sistema = User::where('email', 'admin@menteplena.test')->first()
-            ?? User::role('auxiliar_pqrsd')->first()
-            ?? User::query()->firstOrFail();
+        $actorPublico = null;
 
         $tokenPlano = Str::random(40);
         $files = array_values(array_filter(
@@ -285,7 +290,7 @@ class FormularioPublicoController extends Controller
                     $huella,
                     $tokenPlano,
                     function () use (
-                        $data, $canal, $sistema, $tokenPlano, $files, $descripcion,
+                        $data, $canal, $actorPublico, $tokenPlano, $files, $descripcion,
                         $esAnonimo, $anonimoPendienteJuridica, $noClasifica, $medio, $nombre, $tipoDoc, $documento, $email, $direccion, $telefono,
                         $pacienteNombre, $pacienteTipoDoc, $pacienteDoc, $representante, $canalCodigo
                     ) {
@@ -311,7 +316,7 @@ class FormularioPublicoController extends Controller
                             'sede_id' => $data['sede_id'] ?? null,
                             'servicio_area' => $data['servicio_area'] ?? null,
                             'descripcion' => $descripcion,
-                        ], $sistema);
+                        ], $actorPublico);
 
                         $registraConsentimiento = $this->politicaPublicada() && ! $esAnonimo;
                         $caso->update([
@@ -331,7 +336,7 @@ class FormularioPublicoController extends Controller
                         ]);
 
                         if ($files !== []) {
-                            $this->adjuntoService->guardarSoportesPublicos($caso, $files, $sistema);
+                            $this->adjuntoService->guardarSoportesPublicos($caso, $files, $actorPublico);
                         }
 
                         return $caso->fresh();

@@ -18,7 +18,7 @@ class PqrsdService
         private readonly SlaCalculator $slaCalculator,
     ) {}
 
-    public function radicarManual(array $data, User $usuario): Pqrsd
+    public function radicarManual(array $data, ?User $usuario): Pqrsd
     {
         return DB::transaction(function () use ($data, $usuario) {
             $recepcion = isset($data['fecha_recepcion'])
@@ -75,8 +75,8 @@ class PqrsdService
                 'descripcion' => $data['descripcion'],
                 'observaciones_internas' => $data['observaciones_internas'] ?? null,
                 'responsable_id' => $data['responsable_id'] ?? null,
-                'creado_por' => $usuario->id,
-                'radicado_por' => $usuario->id,
+                'creado_por' => $usuario?->id,
+                'radicado_por' => $usuario?->id,
             ];
 
             $tipoCodigo = null;
@@ -95,9 +95,9 @@ class PqrsdService
 
             ActuacionPqrsd::create([
                 'pqrsd_id' => $caso->id,
-                'usuario_id' => $usuario->id,
+                'usuario_id' => $usuario?->id,
                 'tipo' => 'radicacion',
-                'titulo' => 'Radicación manual',
+                'titulo' => $usuario === null ? 'Radicación pública' : 'Radicación manual',
                 'detalle' => 'Caso radicado con número '.$caso->radicado
                     .'. Recepción preservada: '.$recepcion->format('d/m/Y H:i')
                     .($caso->fecha_limite ? '. Límite: '.$caso->fecha_limite->format('d/m/Y H:i') : ''),
@@ -111,7 +111,7 @@ class PqrsdService
 
             HistorialEstadoPqrsd::create([
                 'pqrsd_id' => $caso->id,
-                'usuario_id' => $usuario->id,
+                'usuario_id' => $usuario?->id,
                 'campo' => 'estado_operativo',
                 'valor_anterior' => null,
                 'valor_nuevo' => $caso->estado_operativo,
@@ -121,7 +121,7 @@ class PqrsdService
             if ($caso->fecha_limite) {
                 HistorialEstadoPqrsd::create([
                     'pqrsd_id' => $caso->id,
-                    'usuario_id' => $usuario->id,
+                    'usuario_id' => $usuario?->id,
                     'campo' => 'fecha_limite',
                     'valor_anterior' => null,
                     'valor_nuevo' => $caso->fecha_limite,

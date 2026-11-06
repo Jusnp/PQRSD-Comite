@@ -53,6 +53,7 @@ services:
       TRUSTED_HOSTS: ${TRUSTED_HOSTS:-}
     volumes:
       - pqrsd_prod_storage:/var/www/html/storage
+      - pqrsd_prod_qrs:/var/www/html/public/qrs
     depends_on:
       postgres:
         condition: service_healthy
@@ -86,6 +87,8 @@ services:
       retries: 12
       start_period: 20s
     restart: unless-stopped
+    volumes:
+      - pqrsd_prod_qrs:/var/www/html/public/qrs:ro
     networks:
       - pqrsd
 
@@ -98,3 +101,5 @@ volumes:
     name: ${PQRSD_VOLUME_DATA:-pqrsd_prod_data}
   pqrsd_prod_storage:
     name: ${PQRSD_VOLUME_STORAGE:-pqrsd_prod_storage}
+  pqrsd_prod_qrs:
+    name: pqrsd_prod_qrs

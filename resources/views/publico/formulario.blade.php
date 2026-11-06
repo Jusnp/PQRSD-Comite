@@ -205,7 +205,7 @@
                 <select class="form-select" id="motivo_pqrsd_id" name="motivo_pqrsd_id">
                     <option value="">No estoy seguro</option>
                     @foreach($motivos as $motivo)
-                        <option value="{{ $motivo->id }}" data-sugerencia="{{ $motivo->subcategoriaSugerida ? $motivo->subcategoriaSugerida->categoria?->nombre.' → '.$motivo->subcategoriaSugerida->nombre : '' }}" @selected(old('motivo_pqrsd_id') == $motivo->id)>{{ $motivo->nombre }}</option>
+                        <option value="{{ $motivo->id }}" data-tipo-id="{{ $motivo->tipo_pqrsd_id }}" data-sugerencia="{{ $motivo->subcategoriaSugerida ? $motivo->subcategoriaSugerida->categoria?->nombre.' → '.$motivo->subcategoriaSugerida->nombre : '' }}" @selected(old('motivo_pqrsd_id') == $motivo->id)>{{ $motivo->nombre }}</option>
                     @endforeach
                 </select>
                 <p class="form-help" id="sugerencia-categoria" hidden></p>
@@ -422,6 +422,26 @@
             document.querySelectorAll('.tipo-req').forEach(el => { el.hidden = noSe.checked; });
         }
         const motivo = document.getElementById('motivo_pqrsd_id');
+        const tipoId = noSe?.checked ? '' : (tipo?.value || '');
+
+        if (motivo) {
+            Array.from(motivo.options).forEach(opcion => {
+                if (!opcion.value) return;
+
+                const coincide = tipoId !== '' &&
+                    opcion.dataset.tipoId === tipoId;
+
+                opcion.hidden = !coincide;
+                opcion.disabled = !coincide;
+            });
+
+            if (motivo.selectedOptions[0]?.disabled) {
+                motivo.value = '';
+            }
+
+            motivo.disabled = !tipoId;
+        }
+
         const ayuda = document.getElementById('sugerencia-categoria');
         const sugerida = motivo?.selectedOptions?.[0]?.dataset?.sugerencia || '';
         if (ayuda) {
@@ -468,6 +488,7 @@
     anon?.addEventListener('change', syncIdentidad);
     medio?.addEventListener('change', syncMedio);
     document.getElementById('ciudadano_no_clasifica')?.addEventListener('change', syncClasificacion);
+    document.getElementById('tipo_pqrsd_id')?.addEventListener('change', syncClasificacion);
     document.getElementById('motivo_pqrsd_id')?.addEventListener('change', syncClasificacion);
     syncQuien();
     syncIdentidad();

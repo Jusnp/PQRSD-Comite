@@ -43,6 +43,12 @@ RUN composer dump-autoload --optimize --no-dev --no-interaction --no-scripts \
     && sed -i 's/\r$//' docker/entrypoint-prod.sh \
     && chmod 0755 docker/entrypoint-prod.sh \
     && chown -R www-data:www-data storage bootstrap/cache
+# PERMISOS LECTURA PQRSD
+# Permitir lectura del codigo sin abrir storage ni bootstrap/cache.
+RUN chmod 0755 /var/www/html \
+    && find /var/www/html -path /var/www/html/storage -prune -o -path /var/www/html/bootstrap/cache -prune -o -type d -exec chmod a+rx {} + \
+    && find /var/www/html -path /var/www/html/storage -prune -o -path /var/www/html/bootstrap/cache -prune -o -type f -exec chmod a+r {} +
+
 ENTRYPOINT ["/var/www/html/docker/entrypoint-prod.sh"]
 CMD ["php-fpm", "-F"]
 

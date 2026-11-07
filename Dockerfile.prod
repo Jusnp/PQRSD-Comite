@@ -28,6 +28,14 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-autoloader --no-progress
 COPY . .
 COPY --from=assets /app/public/build ./public/build
+# El contexto puede traer un QR de desarrollo. No debe quedar en la imagen:
+# un volumen vacío copiaría esos archivos y Nginx los serviría sin pasar por PHP.
+RUN rm -f \
+        public/qrs/formulario-pqrsd.png \
+        public/qrs/formulario-pqrsd.svg \
+        public/qrs/formulario-pqrsd.url.txt \
+        public/qrs/.url-hash \
+    && mkdir -p public/qrs
 COPY docker/php/pqrsd.ini /usr/local/etc/php/conf.d/pqrsd.ini
 COPY docker/php/pqrsd-prod.ini /usr/local/etc/php/conf.d/pqrsd-prod.ini
 RUN composer dump-autoload --optimize --no-dev --no-interaction --no-scripts \

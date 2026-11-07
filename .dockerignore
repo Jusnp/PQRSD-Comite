@@ -18,6 +18,7 @@ storage/pail
 public/hot
 public/storage
 public/build
+public/qrs/*
 bootstrap/cache/*.php
 *.sql
 *.sql.gz

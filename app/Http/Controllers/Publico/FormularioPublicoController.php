@@ -18,8 +18,8 @@ use App\Services\PqrsdService;
 use App\Services\ResolucionRadicado;
 use App\Support\EstadoPublicoPqrsd;
 use App\Support\TelefonoColombia;
+use App\Support\ArchivosQrFormulario;
 use App\Support\PublicUrl;
-use App\Support\QrPngGenerator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -27,7 +27,6 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
-use SimpleSoftwareIO\QrCode\Facades\QrCode;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class FormularioPublicoController extends Controller
@@ -559,13 +558,14 @@ class FormularioPublicoController extends Controller
     {
         $url = PublicUrl::formulario(viaQr: true);
         $distributable = PublicUrl::isDistributable($url);
-        $this->ensureQrFiles($url);
+        $qrDisponible = ArchivosQrFormulario::sincronizar($url, public_path('qrs'));
 
         $version = substr(sha1($url), 0, 12);
 
         return view('publico.qr', [
             'url' => $url,
             'distributable' => $distributable,
+            'qrDisponible' => $qrDisponible,
             'urlSource' => PublicUrl::source(),
             'qrSvgAsset' => asset('qrs/formulario-pqrsd.svg').'?v='.$version,
             'qrPngAsset' => asset('qrs/formulario-pqrsd.png').'?v='.$version,
@@ -580,7 +580,9 @@ class FormularioPublicoController extends Controller
         }
 
         $url = PublicUrl::formulario(viaQr: true);
-        $this->ensureQrFiles($url);
+        if (! ArchivosQrFormulario::sincronizar($url, public_path('qrs'))) {
+            abort(404);
+        }
 
         if ($format === 'svg') {
             $path = public_path('qrs/formulario-pqrsd.svg');
@@ -600,43 +602,6 @@ class FormularioPublicoController extends Controller
             'Content-Type' => 'image/png',
             'Content-Disposition' => 'attachment; filename="qr-pqrsd-comite.png"',
         ]);
-    }
-
-    private function ensureQrFiles(string $url): void
-    {
-        $dir = public_path('qrs');
-        if (! is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
-        $marker = $dir.DIRECTORY_SEPARATOR.'.url-hash';
-        $target = $dir.DIRECTORY_SEPARATOR.'formulario-pqrsd.url.txt';
-        $svgPath = $dir.DIRECTORY_SEPARATOR.'formulario-pqrsd.svg';
-        $pngPath = $dir.DIRECTORY_SEPARATOR.'formulario-pqrsd.png';
-        $hash = sha1($url);
-        $needsRegen = ! is_file($marker) || trim((string) file_get_contents($marker)) !== $hash
-            || ! is_file($target) || trim((string) file_get_contents($target)) !== $url
-            || ! is_file($svgPath)
-            || ! is_file($pngPath);
-
-        if (! $needsRegen) {
-            return;
-        }
-
-        foreach ([$svgPath, $pngPath, $marker, $target] as $old) {
-            if (is_file($old)) {
-                @unlink($old);
-            }
-        }
-
-        file_put_contents(
-            $svgPath,
-            QrCode::format('svg')->size(320)->margin(1)->generate($url)
-        );
-
-        file_put_contents($pngPath, QrPngGenerator::generate($url, 320));
-        file_put_contents($target, $url);
-        file_put_contents($marker, $hash);
     }
 
     private function politicaPublicada(): bool

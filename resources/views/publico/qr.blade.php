@@ -27,7 +27,11 @@
 
 <div class="card qr-panel">
     <p class="muted" style="margin-top:0"><strong>Vista previa</strong></p>
+    @if($qrDisponible)
     <img src="{{ $qrSvgAsset }}" alt="Código QR del {{ config('identidad.qr_titulo') }}" width="320" height="320">
+    @else
+    <p class="alert alert-warning" role="alert">No se generó un código nuevo. La URL configurada no puede publicarse y los archivos existentes no se modificaron.</p>
+    @endif
     <p style="margin-top:16px"><strong>Enlace al formulario público:</strong></p>
     <p><a id="url-publico-qr" href="{{ $url }}">{{ $url }}</a></p>
     <p class="muted">
@@ -37,8 +41,10 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
         <a class="btn btn-green" href="{{ $url }}" target="_blank" rel="noopener">Abrir formulario</a>
         <button type="button" class="btn btn-secondary" id="btn-copiar-url">Copiar enlace</button>
+        @if($qrDisponible)
         <a class="btn btn-secondary" href="{{ route('publico.qr.download', ['format' => 'png']) }}">Descargar QR en PNG</a>
         <a class="btn btn-secondary" href="{{ route('publico.qr.download', ['format' => 'svg']) }}">Descargar QR en SVG</a>
+        @endif
     </div>
 </div>
 @endsection

@@ -24,6 +24,12 @@ if [ ! -e public/storage ]; then
     php artisan storage:link --no-interaction
 fi
 
+# El volumen de QR puede llegar vacío o con archivos ya publicados.
+# Solo se asegura el directorio. No se borran ni se regeneran aquí.
+mkdir -p public/qrs
+chown -R www-data:www-data public/qrs
+chmod 0755 public/qrs
+
 php artisan config:cache --no-interaction
 php artisan route:cache --no-interaction
 php artisan view:cache --no-interaction

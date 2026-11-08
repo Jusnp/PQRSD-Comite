@@ -517,6 +517,38 @@ html[data-theme="dark"] .alert-warning {
     .chart-bar-row { grid-template-columns: 1fr; }
 }
 
+.app-main,
+.card,
+.form-grid > * {
+    min-width: 0;
+    max-width: 100%;
+}
+.card h2,
+.card h3 {
+    overflow-wrap: anywhere;
+}
+.chart-frame {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+}
+.chart-frame canvas {
+    display: block;
+    max-width: 100%;
+}
+.qr-enlace,
+#url-publico-qr {
+    display: inline;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+.qr-panel {
+    min-width: 0;
+    max-width: 100%;
+}
+
 /* ——— Expediente PQRSD ——— */
 .badge-yellow{background:rgba(202,138,4,.15);color:#ca8a04;padding:4px 10px;border-radius:6px;font-weight:700;font-size:13px}
 .badge-green{background:rgba(22,163,74,.15);color:#15803d;padding:4px 10px;border-radius:6px;font-weight:700;font-size:13px}
@@ -764,6 +796,10 @@ html[data-theme="dark"] .alert-warning {
 }
 
 @media (max-width: 768px) {
+    .header-title h1,
+    .header-title p {
+        overflow-wrap: anywhere;
+    }
     .publico-body .app-header-inner {
         width: min(100% - 16px, 1260px);
         min-width: 0;

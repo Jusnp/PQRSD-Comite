@@ -162,7 +162,7 @@
     <div class="form-grid">
         <div>
             <h3>Por categoría</h3>
-            <canvas id="chartCategoria" height="180" aria-label="Casos por categoría"></canvas>
+            <div class="chart-frame"><canvas id="chartCategoria" height="180" aria-label="Casos por categoría"></canvas></div>
             <table class="pqrsd-table"><tbody>
                 @forelse($tablero['por_categoria'] ?? [] as $fila)
                     <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['total'] }}</td></tr>
@@ -173,7 +173,7 @@
         </div>
         <div>
             <h3>Por categoría y subcategoría</h3>
-            <canvas id="chartSubcategoria" height="180" aria-label="Casos por subcategoría"></canvas>
+            <div class="chart-frame"><canvas id="chartSubcategoria" height="180" aria-label="Casos por subcategoría"></canvas></div>
             <table class="pqrsd-table"><tbody>
                 @forelse($tablero['por_subcategoria'] ?? [] as $fila)
                     <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['total'] }}</td></tr>
@@ -184,7 +184,7 @@
         </div>
         <div>
             <h3>Vencidos por sede</h3>
-            <canvas id="chartVencidosSede" height="180" aria-label="Casos vencidos por sede"></canvas>
+            <div class="chart-frame"><canvas id="chartVencidosSede" height="180" aria-label="Casos vencidos por sede"></canvas></div>
             <table class="pqrsd-table"><tbody>
                 @forelse($tablero['vencidos_por_sede'] ?? [] as $fila)
                     <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['total'] }}</td></tr>
@@ -195,7 +195,7 @@
         </div>
         <div>
             <h3>Satisfacción por sede</h3>
-            <canvas id="chartSatisfaccionSede" height="180" aria-label="Satisfacción por sede"></canvas>
+            <div class="chart-frame"><canvas id="chartSatisfaccionSede" height="180" aria-label="Satisfacción por sede"></canvas></div>
             <table class="pqrsd-table"><tbody>
                 @forelse($tablero['satisfaccion_por_sede'] ?? [] as $fila)
                     <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['promedio'] !== null ? $fila['promedio'].' ('.$fila['encuestas'].' encuestas)' : 'Sin encuestas' }}</td></tr>
@@ -206,7 +206,7 @@
         </div>
         <div>
             <h3>Satisfacción por tipo</h3>
-            <canvas id="chartSatisfaccionTipo" height="180" aria-label="Satisfacción por tipo"></canvas>
+            <div class="chart-frame"><canvas id="chartSatisfaccionTipo" height="180" aria-label="Satisfacción por tipo"></canvas></div>
             <table class="pqrsd-table"><tbody>
                 @forelse($tablero['satisfaccion_por_tipo'] ?? [] as $fila)
                     <tr><td>{{ $fila['etiqueta'] }}</td><td>{{ $fila['promedio'] !== null ? $fila['promedio'].' ('.$fila['encuestas'].' encuestas)' : 'Sin encuestas' }}</td></tr>
@@ -241,8 +241,9 @@
     <section class="card card-pad" aria-labelledby="chart-barras">
         <h2 id="chart-barras" style="margin-top:0">Respondidos: oportunos vs fuera de plazo</h2>
         <p class="muted">Cantidades de casos (no porcentajes).</p>
-        <canvas id="chartBarras" height="220" aria-label="Gráfica de barras de oportunidad"></canvas>
-        <table class="pqrsd-table" style="margin-top:12px">
+        <div class="chart-frame"><canvas id="chartBarras" height="220" aria-label="Gráfica de barras de oportunidad"></canvas></div>
+        <div class="table-wrap" style="margin-top:12px">
+        <table class="pqrsd-table">
             <caption class="sr-only">Equivalente tabular de la gráfica de barras</caption>
             <thead><tr><th>Clasificación</th><th>Oportunos</th><th>Fuera de plazo</th></tr></thead>
             <tbody>
@@ -257,6 +258,7 @@
             @endforelse
             </tbody>
         </table>
+        </div>
     </section>
     <section class="card card-pad" aria-labelledby="chart-lineas">
         <h2 id="chart-lineas" style="margin-top:0">{{ $tablero['evolucion_oportunidad']['titulo'] }}</h2>
@@ -276,8 +278,9 @@
         @if($evoMeta['sin_datos_serie'] ?? false)
             <p class="muted" role="status" id="evo-sin-datos">Sin datos evaluables para el período seleccionado.</p>
         @endif
-        <canvas id="chartLineas" height="220" aria-label="{{ $evoMeta['titulo'] }}" @if($evoMeta['sin_datos_serie'] ?? false) hidden @endif></canvas>
-        <table class="pqrsd-table" style="margin-top:12px">
+        <div class="chart-frame"><canvas id="chartLineas" height="220" aria-label="{{ $evoMeta['titulo'] }}" @if($evoMeta['sin_datos_serie'] ?? false) hidden @endif></canvas></div>
+        <div class="table-wrap" style="margin-top:12px">
+        <table class="pqrsd-table">
             <caption class="sr-only">Equivalente tabular de la evolución de oportunidad</caption>
             <thead>
             <tr>
@@ -302,13 +305,14 @@
             @endforelse
             </tbody>
         </table>
+        </div>
     </section>
 </div>
 
 <section class="card card-pad" style="margin-bottom:18px" aria-labelledby="chart-volumen">
     <h2 id="chart-volumen" style="margin-top:0">{{ $tablero['volumen_por_respuesta']['titulo'] }}</h2>
     <p class="muted">{{ $tablero['volumen_por_respuesta']['nota'] }}</p>
-    <canvas id="chartVolumen" height="160" aria-label="Volumen mensual recepción y respuesta"></canvas>
+    <div class="chart-frame"><canvas id="chartVolumen" height="160" aria-label="Volumen mensual recepción y respuesta"></canvas></div>
 </section>
 
 <section class="card card-pad" aria-labelledby="tabla-ind">

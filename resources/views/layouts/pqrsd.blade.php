@@ -174,16 +174,79 @@
     const openBtn = document.getElementById('pqrsd-menu-open');
     const closeBtn = document.getElementById('pqrsd-menu-close');
     const backdrop = document.getElementById('pqrsd-menu-backdrop');
+    const fondo = [
+        document.querySelector('.pqrsd-skip-link'),
+        openBtn,
+        document.querySelector('.app-header'),
+        document.querySelector('.app-main'),
+    ].filter(Boolean);
+    let retornoPendiente = 0;
+
+    function focosDelPanel() {
+        return [...nav.querySelectorAll('a[href], button:not([disabled]), summary, input, select, textarea')]
+            .filter((el) => {
+                if (el.closest('[hidden]') || el.hasAttribute('disabled')) return false;
+                const cerrado = el.closest('details:not([open])');
+                if (cerrado && el.tagName !== 'SUMMARY') return false;
+                return el.getClientRects().length > 0;
+            });
+    }
 
     function setOpen(open) {
+        if (!nav || nav.classList.contains('is-open') === open) return;
         nav.classList.toggle('is-open', open);
-        backdrop.hidden = !open;
+        if (backdrop) backdrop.hidden = !open;
         html.classList.toggle('siruta-menu-open', open);
-        openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        openBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+        nav.setAttribute('aria-hidden', open ? 'false' : 'true');
+        if (open) {
+            retornoPendiente += 1;
+            nav.removeAttribute('inert');
+            nav.setAttribute('aria-modal', 'true');
+            fondo.forEach((el) => el.setAttribute('inert', ''));
+            (closeBtn || focosDelPanel()[0])?.focus();
+        } else {
+            nav.removeAttribute('aria-modal');
+            nav.setAttribute('inert', '');
+            fondo.forEach((el) => el.removeAttribute('inert'));
+            const ticket = ++retornoPendiente;
+            const destino = openBtn;
+            setTimeout(() => {
+                if (ticket !== retornoPendiente || nav.classList.contains('is-open')) return;
+                destino?.focus();
+            }, 0);
+        }
     }
+
+    if (nav && !nav.classList.contains('is-open')) {
+        nav.setAttribute('aria-hidden', 'true');
+        nav.setAttribute('inert', '');
+    }
+    if (backdrop) backdrop.tabIndex = -1;
+
     openBtn?.addEventListener('click', () => setOpen(true));
     closeBtn?.addEventListener('click', () => setOpen(false));
     backdrop?.addEventListener('click', () => setOpen(false));
+    document.addEventListener('keydown', (event) => {
+        if (!nav?.classList.contains('is-open')) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            setOpen(false);
+            return;
+        }
+        if (event.key !== 'Tab') return;
+        const items = focosDelPanel();
+        if (!items.length) return;
+        const primero = items[0];
+        const ultimo = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === primero) {
+            event.preventDefault();
+            ultimo.focus();
+        } else if (!event.shiftKey && document.activeElement === ultimo) {
+            event.preventDefault();
+            primero.focus();
+        }
+    });
 })();
 </script>
 @include('partials.theme-toggle-script')

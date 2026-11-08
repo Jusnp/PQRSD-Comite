@@ -33,7 +33,7 @@
     <p class="alert alert-warning" role="alert">No se generó un código nuevo. La URL configurada no puede publicarse y los archivos existentes no se modificaron.</p>
     @endif
     <p style="margin-top:16px"><strong>Enlace al formulario público:</strong></p>
-    <p><a id="url-publico-qr" href="{{ $url }}">{{ $url }}</a></p>
+    <p class="qr-enlace"><a id="url-publico-qr" href="{{ $url }}">{{ $url }}</a></p>
     <p class="muted">
         El botón Abrir, Copiar enlace y el código QR (PNG/SVG) usan exactamente esta misma URL.
         No incluye datos personales.

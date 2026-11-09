@@ -3,6 +3,7 @@
 namespace App\Services\Correo;
 
 use App\Mail\DTO\InboundMessageData;
+use App\Models\CuentaCorreo;
 use App\Models\MensajeCorreo;
 use App\Models\Pqrsd;
 
@@ -17,14 +18,34 @@ class EmailClassifier
      *   thread_key:?string
      * }
      */
-    public function classify(InboundMessageData $data): array
+    public function classify(InboundMessageData $data, ?CuentaCorreo $cuenta = null): array
     {
+        if ($this->esAvisoPropio($data)) {
+            $radicado = $this->extraerRadicado(
+                ($data->subject ?? '')."\n".($data->bodyText ?? '')."\n".($data->rawHeaders ?? '')
+            );
+            $caso = $radicado
+                ? Pqrsd::query()->where('radicado', strtoupper($radicado))->first()
+                : null;
+            $permitido = $caso && $this->enlacePermitido($cuenta, $caso);
+
+            return [
+                'clasificacion' => $permitido ? 'respuesta_caso' : 'ruido',
+                'pqrsd_id' => $permitido ? $caso->id : null,
+                'radicado_detectado' => $radicado ? strtoupper($radicado) : null,
+                'motivo' => $permitido
+                    ? 'Aviso generado por PQRSD. No abre otro expediente.'
+                    : 'Aviso generado por PQRSD. No se asoció a un expediente de otra organización.',
+                'thread_key' => $this->threadKey($data),
+            ];
+        }
+
         $radicado = $this->extraerRadicado(
             ($data->subject ?? '')."\n".($data->bodyText ?? '')."\n".($data->bodyHtml ?? '')
         );
 
-        $porHeaders = $this->buscarPorHeaders($data);
-        if ($porHeaders) {
+        $porHeaders = $this->buscarPorHeaders($data, $cuenta);
+        if ($porHeaders && $this->enlacePermitido($cuenta, $porHeaders->pqrsd)) {
             return [
                 'clasificacion' => 'respuesta_caso',
                 'pqrsd_id' => $porHeaders->pqrsd_id,
@@ -36,12 +57,21 @@ class EmailClassifier
 
         if ($radicado) {
             $caso = Pqrsd::query()->where('radicado', strtoupper($radicado))->first();
-            if ($caso) {
+            if ($caso && $this->enlacePermitido($cuenta, $caso)) {
                 return [
                     'clasificacion' => 'respuesta_caso',
                     'pqrsd_id' => $caso->id,
                     'radicado_detectado' => strtoupper($radicado),
                     'motivo' => 'Radicado detectado en asunto/cuerpo',
+                    'thread_key' => $this->threadKey($data),
+                ];
+            }
+            if ($caso) {
+                return [
+                    'clasificacion' => 'pendiente_revision',
+                    'pqrsd_id' => null,
+                    'radicado_detectado' => strtoupper($radicado),
+                    'motivo' => 'El radicado pertenece a otra organización. No se asoció automáticamente.',
                     'thread_key' => $this->threadKey($data),
                 ];
             }
@@ -102,7 +132,16 @@ class EmailClassifier
         return sha1(strtolower(trim($data->messageId)));
     }
 
-    private function buscarPorHeaders(InboundMessageData $data): ?MensajeCorreo
+    private function enlacePermitido(?CuentaCorreo $cuenta, ?Pqrsd $caso): bool
+    {
+        if (! $cuenta || ! $caso) {
+            return $caso !== null;
+        }
+
+        return app(SeleccionBuzonCorreo::class)->permiteAsociar($cuenta, $caso);
+    }
+
+    private function buscarPorHeaders(InboundMessageData $data, ?CuentaCorreo $cuenta): ?MensajeCorreo
     {
         $ids = collect();
 
@@ -123,6 +162,7 @@ class EmailClassifier
 
         return MensajeCorreo::query()
             ->whereNotNull('pqrsd_id')
+            ->when($cuenta, fn ($q) => $q->where('cuenta_correo_id', $cuenta->id))
             ->where(function ($q) use ($ids) {
                 foreach ($ids as $id) {
                     $q->orWhere('message_id', $id)
@@ -138,6 +178,14 @@ class EmailClassifier
     private function normalizarId(string $id): string
     {
         return trim($id);
+    }
+
+    private function esAvisoPropio(InboundMessageData $data): bool
+    {
+        $cabeceras = strtolower(($data->rawHeaders ?? '').' '.json_encode($data->metadatos));
+
+        return str_contains($cabeceras, 'x-pqrsd-origen: radicacion-web')
+            || (($data->metadatos['origen'] ?? null) === 'radicacion-web');
     }
 
     private function pareceRuido(InboundMessageData $data): bool

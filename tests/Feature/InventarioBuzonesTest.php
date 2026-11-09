@@ -38,6 +38,7 @@ class InventarioBuzonesTest extends TestCase
             ."noexiste@menteplena.com.co,individual,,,,,autorizado,no debe crearse,1\n";
 
         $file = UploadedFile::fake()->createWithContent('inv.csv', $csv);
+        $cuentasAntes = CuentaCorreo::query()->count();
 
         $this->actingAs($lider)
             ->post(route('cuentas-correo.inventario.import'), ['inventario_csv' => $file])
@@ -48,7 +49,8 @@ class InventarioBuzonesTest extends TestCase
         $this->assertSame('autorizado', $cuenta->estado_autorizacion);
         $this->assertSame('Ana Prueba', $cuenta->responsable_nombre);
         $this->assertNotNull($cuenta->fecha_ultima_validacion_inventario);
-        $this->assertSame(1, CuentaCorreo::count());
+        $this->assertSame($cuentasAntes, CuentaCorreo::query()->count());
+        $this->assertDatabaseMissing('cuentas_correo', ['direccion' => 'noexiste@menteplena.com.co']);
     }
 
     public function test_plantilla_incluye_encabezados_canonicos(): void

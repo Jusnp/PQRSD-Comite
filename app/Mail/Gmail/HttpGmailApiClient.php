@@ -114,6 +114,37 @@ class HttpGmailApiClient implements GmailApiClient
         ];
     }
 
+    public function insertRaw(string $userId, string $rawRfc822, array $labelIds = ['INBOX', 'UNREAD']): array
+    {
+        $encoded = rtrim(strtr(base64_encode($rawRfc822), '+/', '-_'), '=');
+        $response = $this->request('POST', "/users/{$userId}/messages", [], [
+            'raw' => $encoded,
+            'labelIds' => array_values($labelIds),
+        ]);
+
+        if (! $response->successful()) {
+            Log::channel('correo_sync')->warning('Gmail insert falló', [
+                'status' => $response->status(),
+            ]);
+
+            return [
+                'ok' => false,
+                'id' => null,
+                'threadId' => null,
+                'error' => 'HTTP '.$response->status(),
+            ];
+        }
+
+        $json = $response->json() ?? [];
+
+        return [
+            'ok' => true,
+            'id' => $json['id'] ?? null,
+            'threadId' => $json['threadId'] ?? null,
+            'error' => null,
+        ];
+    }
+
     public function watch(string $userId, string $topicName, array $labelIds = ['INBOX']): array
     {
         $response = $this->request('POST', "/users/{$userId}/watch", [], [

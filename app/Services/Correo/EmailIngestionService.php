@@ -32,25 +32,43 @@ class EmailIngestionService
                     return ['mensaje' => $existente, 'duplicado' => true, 'error' => null];
                 }
 
+                $gmailId = $data->metadatos['uid'] ?? $data->metadatos['gmail_message_id'] ?? null;
+                if (filled($gmailId)) {
+                    $porGmail = MensajeCorreo::query()
+                        ->where('cuenta_correo_id', $cuenta->id)
+                        ->where('gmail_message_id', $gmailId)
+                        ->first();
+                    if ($porGmail) {
+                        return ['mensaje' => $porGmail, 'duplicado' => true, 'error' => null];
+                    }
+                }
+
                 // Duplicado global por Message-ID (mismo correo llegado a varias cuentas / central)
                 $global = MensajeCorreo::query()->where('message_id', $messageId)->first();
                 if ($global) {
+                    $puedeEnlazar = $global->pqrsd_id
+                        && $global->pqrsd
+                        && app(SeleccionBuzonCorreo::class)->permiteAsociar($cuenta, $global->pqrsd);
                     $copia = $global->replicate([
                         'cuenta_correo_id',
                         'estado_procesamiento',
                         'clasificacion',
+                        'pqrsd_id',
+                        'motivo_clasificacion',
                     ]);
                     $copia->cuenta_correo_id = $cuenta->id;
                     $copia->estado_procesamiento = 'ignorado_duplicado';
-                    $copia->clasificacion = $global->clasificacion;
-                    $copia->motivo_clasificacion = 'Duplicado por Message-ID ya importado en otra cuenta';
-                    $copia->pqrsd_id = $global->pqrsd_id;
+                    $copia->clasificacion = $puedeEnlazar ? $global->clasificacion : 'pendiente_revision';
+                    $copia->motivo_clasificacion = $puedeEnlazar
+                        ? 'Duplicado por Message-ID ya importado en otra cuenta'
+                        : 'El mensaje ya existía en otro buzón. No se asoció el expediente.';
+                    $copia->pqrsd_id = $puedeEnlazar ? $global->pqrsd_id : null;
                     $copia->save();
 
                     return ['mensaje' => $copia, 'duplicado' => true, 'error' => null];
                 }
 
-                $clasificacion = $this->classifier->classify($data);
+                $clasificacion = $this->classifier->classify($data, $cuenta);
 
                 $rawPath = null;
                 if ($data->rawEml) {
@@ -62,6 +80,8 @@ class EmailIngestionService
                     'cuenta_correo_id' => $cuenta->id,
                     'pqrsd_id' => $clasificacion['pqrsd_id'],
                     'message_id' => $messageId,
+                    'gmail_message_id' => filled($gmailId) ? (string) $gmailId : null,
+                    'gmail_thread_id' => $data->metadatos['thread_id'] ?? $data->metadatos['gmail_thread_id'] ?? null,
                     'in_reply_to' => $data->inReplyTo,
                     'references_header' => $data->references,
                     'thread_key' => $clasificacion['thread_key'],

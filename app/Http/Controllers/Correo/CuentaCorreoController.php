@@ -106,6 +106,12 @@ class CuentaCorreoController extends Controller
 
     public function probar(CuentaCorreo $cuentaCorreo, MailProviderManager $manager): RedirectResponse
     {
+        if (! $cuentaCorreo->activo) {
+            return back()->withErrors([
+                'conexion' => 'El buzón sigue inactivo. La autorización no prueba ni habilita el envío.',
+            ]);
+        }
+
         $resultado = $manager->for($cuentaCorreo)->testConnection($cuentaCorreo);
         $cuentaCorreo->update([
             'estado_conexion' => $resultado['ok'] ? 'ok' : 'error',
@@ -120,6 +126,12 @@ class CuentaCorreoController extends Controller
 
     public function sincronizar(CuentaCorreo $cuentaCorreo, EmailSyncService $sync): RedirectResponse
     {
+        if (! $cuentaCorreo->activo) {
+            return back()->withErrors([
+                'sync' => 'El buzón sigue inactivo. La autorización no inicia la sincronización.',
+            ]);
+        }
+
         $r = $sync->syncCuenta($cuentaCorreo);
 
         return back()->with('success', sprintf(
@@ -142,6 +154,8 @@ class CuentaCorreoController extends Controller
             'responsable_nombre' => ['nullable', 'string', 'max:255'],
             'tipo_buzon' => ['required', 'in:individual,alias,grupo,reenvio,desconocido,otro'],
             'buzon_canonico' => ['nullable', 'email', 'max:255'],
+            'direccion_visible' => ['nullable', 'email', 'max:255'],
+            'recibe_radicacion_web' => ['sometimes', 'boolean'],
             'estado_autorizacion' => ['required', 'in:pendiente,autorizado,rechazado,no_aplica'],
             'observaciones_inventario' => ['nullable', 'string', 'max:2000'],
             'tipo_integracion' => ['required', 'in:mock,imap,microsoft_graph,google_api,central_forward'],
@@ -155,6 +169,7 @@ class CuentaCorreoController extends Controller
 
         $data['activo'] = $request->boolean('activo');
         $data['es_buzon_central'] = $request->boolean('es_buzon_central');
+        $data['recibe_radicacion_web'] = $request->boolean('recibe_radicacion_web');
         $data['fecha_ultima_validacion_inventario'] = now('America/Bogota');
 
         // Nunca aceptar password en el request

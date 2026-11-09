@@ -393,6 +393,11 @@ class Pqrsd extends Model
         return $this->hasMany(AuditoriaPqrsd::class, 'pqrsd_id')->latest();
     }
 
+    public function salidasCorreo(): HasMany
+    {
+        return $this->hasMany(CorreoSalida::class, 'pqrsd_id')->latest();
+    }
+
     public function mensajesCorreo(): HasMany
     {
         return $this->hasMany(MensajeCorreo::class, 'pqrsd_id')->orderBy('fecha_mensaje');

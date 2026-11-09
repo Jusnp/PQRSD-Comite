@@ -338,6 +338,8 @@ class FormularioPublicoController extends Controller
                             $this->adjuntoService->guardarSoportesPublicos($caso, $files, $actorPublico);
                         }
 
+                        app(\App\Services\Correo\AvisoRadicacionInstitucional::class)->encolar($caso);
+
                         return $caso->fresh();
                     }
                 );

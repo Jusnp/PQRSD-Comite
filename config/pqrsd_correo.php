@@ -80,7 +80,7 @@ return [
         'oauth_redirect_uri' => env('GMAIL_OAUTH_REDIRECT_URI'),
         'oauth_scopes' => array_values(array_filter(array_map('trim', explode(' ', (string) env(
             'GMAIL_OAUTH_SCOPES',
-            'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send'
+            'https://www.googleapis.com/auth/gmail.modify'
         ))))),
     ],
 ];

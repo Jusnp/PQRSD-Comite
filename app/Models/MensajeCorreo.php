@@ -14,6 +14,8 @@ class MensajeCorreo extends Model
         'cuenta_correo_id',
         'pqrsd_id',
         'message_id',
+        'gmail_message_id',
+        'gmail_thread_id',
         'in_reply_to',
         'references_header',
         'thread_key',

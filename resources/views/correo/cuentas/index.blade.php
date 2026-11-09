@@ -6,7 +6,8 @@
 @if($pendientes > 0)
     <div class="alert alert-warning" role="status">
         {{ $pendientes }} dirección(es) con clasificación o autorización pendiente.
-        No conectar Gmail API a direcciones con tipo_buzon=desconocido o grupos sin buzón canónico.
+        OAuth puede iniciarse en un buzón inactivo. Sync y el envío siguen apagados hasta marcarlo activo.
+        Los grupos no se conectan por Gmail API.
     </div>
 @endif
 <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -41,6 +42,7 @@
     <td>
         {{ $item->direccion }}
         @if($item->es_buzon_central)<span class="badge badge-blue">Central</span>@endif
+        @if($item->recibe_radicacion_web)<span class="badge badge-blue">Radicación web</span>@endif
         <div class="muted">{{ $item->responsable_nombre ?: $item->area_responsable }}</div>
     </td>
     <td><code>{{ $item->tipo_buzon ?: 'desconocido' }}</code></td>
@@ -59,8 +61,12 @@
             <a href="{{ route('cuentas-correo.oauth', $item) }}" style="margin-left:8px">OAuth</a>
             <form style="display:inline" method="POST" action="{{ route('cuentas-correo.oauth.revocar', $item) }}" data-pqrsd-confirmar data-variante="peligro" data-titulo="¿Revocar la autorización OAuth?" data-mensaje="La cuenta dejará de usar en PQRSD la autorización de Google. No se modifica Authentik ni otras aplicaciones." data-aceptar="Revocar OAuth">@csrf<button class="btn btn-secondary" type="submit" style="min-height:32px;padding:4px 10px;margin-left:6px">Revocar OAuth</button></form>
         @endif
-        <form style="display:inline" method="POST" action="{{ route('cuentas-correo.probar', $item) }}">@csrf<button class="btn btn-secondary" type="submit" style="min-height:32px;padding:4px 10px;margin-left:6px">Probar</button></form>
-        <form style="display:inline" method="POST" action="{{ route('cuentas-correo.sincronizar', $item) }}">@csrf<button class="btn btn-green" type="submit" style="min-height:32px;padding:4px 10px;margin-left:6px">Sync</button></form>
+        @if($item->activo)
+            <form style="display:inline" method="POST" action="{{ route('cuentas-correo.probar', $item) }}">@csrf<button class="btn btn-secondary" type="submit" style="min-height:32px;padding:4px 10px;margin-left:6px">Probar</button></form>
+            <form style="display:inline" method="POST" action="{{ route('cuentas-correo.sincronizar', $item) }}">@csrf<button class="btn btn-green" type="submit" style="min-height:32px;padding:4px 10px;margin-left:6px">Sync</button></form>
+        @else
+            <span class="muted" style="margin-left:8px">Inactiva: sin sync ni envío</span>
+        @endif
     </td>
 </tr>
 @endforeach

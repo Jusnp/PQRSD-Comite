@@ -386,6 +386,55 @@
     </div>
 </details>
 
+<details class="exp-section card" id="sec-correo">
+    <summary class="exp-section-summary">
+        <span class="exp-section-title">Correo institucional</span>
+        <span class="exp-section-meta muted">{{ $salidasCorreo->count() + $mensajesCorreo->count() }}</span>
+    </summary>
+    <div class="exp-section-body card-pad">
+        <p class="muted" style="margin-top:0">El aviso de radicación web no copia el relato ni datos de contacto. Si no hay credencial, queda en cola y no sale de este servidor.</p>
+        @forelse($salidasCorreo as $salida)
+            <p>
+                <strong>{{ $salida->tipo }}</strong>
+                — {{ $salida->estado }}
+                — {{ $salida->created_at?->timezone('America/Bogota')->format('d/m/Y H:i') }}
+            </p>
+            <p class="muted">Gmail: {{ $salida->gmail_message_id ?: 'sin identificador' }} · Hilo: {{ $salida->gmail_thread_id ?: 'sin identificador' }} · Message-ID: {{ $salida->rfc_message_id ?: 'pendiente' }}</p>
+            @if($salida->ultimo_error)
+                <p class="muted">{{ $salida->ultimo_error }}</p>
+            @endif
+            @if(! in_array($salida->estado, ['enviado', 'requiere_revision'], true) && blank($salida->gmail_message_id) && ! $salida->proveedor_invocado && auth()->user()?->can('update', $pqrsd))
+                <form method="POST" action="{{ route('pqrsd.correo-salidas.reintentar', [$pqrsd, $salida]) }}">
+                    @csrf
+                    <button class="btn" type="submit">Reintentar aviso</button>
+                </form>
+            @endif
+        @empty
+            <p class="muted">No hay avisos en cola.</p>
+        @endforelse
+        @foreach($mensajesCorreo as $mensaje)
+            <p>
+                <strong>{{ $mensaje->direccion }}</strong>
+                · {{ $mensaje->remitente }} → {{ $mensaje->destinatario }}
+                · {{ $mensaje->fecha_mensaje?->timezone('America/Bogota')->format('d/m/Y H:i') }}
+                · {{ $mensaje->estado_procesamiento }}
+            </p>
+            <p class="muted">{{ $mensaje->asunto }} · Gmail {{ $mensaje->gmail_message_id ?: '—' }} · Message-ID {{ $mensaje->message_id }}</p>
+        @endforeach
+        @if(auth()->user()?->can('correos.reply'))
+            <form method="POST" action="{{ route('pqrsd.correo-responder', $pqrsd) }}" style="margin-top:16px">
+                @csrf
+                <label class="form-label" for="correo-destinatario">Destinatario</label>
+                <input class="form-input" id="correo-destinatario" type="email" name="destinatario" value="{{ old('destinatario', $pqrsd->solicitante_email) }}" required>
+                <label class="form-label" for="correo-cuerpo">Respuesta por el buzón de la cuenta</label>
+                <textarea class="form-input" id="correo-cuerpo" name="cuerpo" rows="4" required minlength="10">{{ old('cuerpo', $pqrsd->respuesta_consulta_texto) }}</textarea>
+                <p class="muted">Usa el mismo envío que la bandeja. Solo sale si hay un buzón activo y credencial. No copia el relato del expediente.</p>
+                <button class="btn btn-green" type="submit">Enviar respuesta</button>
+            </form>
+        @endif
+    </div>
+</details>
+
 {{-- C. Respuesta de PQRS --}}
 <details class="exp-section card" id="sec-respuesta" @if($errors->hasAny(['detalle_respuesta', 'respuesta_canal_comunicacion', 'respuesta_evidencia_comunicacion', 'adjuntos'])) open @endif>
     <summary class="exp-section-summary">
@@ -399,7 +448,7 @@
                 <strong>publicar en consulta segura</strong> y
                 <strong>registrar comunicación por otro medio</strong>.
                 Solo la publicación o la comunicación válida alimentan el indicador de oportunidad y habilitan el cierre.
-                Gmail aún no está conectado.
+                El botón de correo institucional envía solo cuando el buzón de la cuenta está activo y tiene credencial. No afirma que el ciudadano haya leído el mensaje.
             </p>
             @if($pqrsd->respuesta_consulta_texto)
                 <p><strong>Texto actual:</strong></p>

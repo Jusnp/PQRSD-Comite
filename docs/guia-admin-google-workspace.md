@@ -51,11 +51,32 @@ Importar el CSV completado en la misma pantalla (no crea direcciones nuevas).
 5. Authorized redirect URI exacta:
    - `https://<DOMINIO-PQRSD>/oauth/gmail/callback`  
    - En local autorizado solo si TI lo aprueba: `http://pqrsd.test/oauth/gmail/callback`  
-6. Scopes mínimos solicitados por la app (ajustar con SSI):
-   - `https://www.googleapis.com/auth/gmail.readonly`  
-   - `https://www.googleapis.com/auth/gmail.send`  
-7. Revisar si Google clasifica estos scopes como **sensitive/restricted** para el tipo de app y completar verificación si aplica.  
+6. Alcance único en la pantalla de consentimiento y en Laravel: `https://www.googleapis.com/auth/gmail.modify`.
+   Ese alcance cubre lectura, inserción en la bandeja y envío. No agregar `gmail.send` ni el alcance total de la cuenta: el cliente OAuth de este proyecto solo tiene `gmail.modify`.
+7. Revisar si Google clasifica estos scopes como **sensitive/restricted** para el tipo de app y completar verificación si aplica.
 8. Entregar a TI (vault): Client ID y Client Secret. **No por chat ni Git.**
+
+### Primer buzón: callcenter@menteplena.com.co
+
+Google Admin confirmó que esa dirección es un usuario real, activo y con Gmail. No es un grupo. La fila local permanece inactiva, con tipo `desconocido` y verificación `pendiente`, hasta que el perfil de OAuth coincida. El middleware `cuenta.activa` exige un funcionario activo, no un buzón activo.
+
+1. Un funcionario con `correos.manage` puede iniciar OAuth aunque el buzón esté inactivo.
+2. OAuth no marca el buzón como activo ni descarga correo. Si el perfil coincide, fija `sincronizar_desde` en ese momento.
+3. Activar el buzón es un paso posterior, en la ficha, después de revisar la autorización.
+4. Mientras `activo` esté en falso, Sync, la prueba de conexión, el worker y el envío no consultan ese buzón.
+5. `GMAIL_ALLOWED_MAILBOXES` debe listar únicamente las direcciones autorizadas. En producción, si queda vacío, la API se rechaza.
+6. El token queda cifrado en `gmail_oauth_tokens`. El secreto del cliente queda en el entorno, no en la base ni en Git.
+7. Varios buzones se registran como cuentas distintas. La radicación web usa la única cuenta activa con `recibe_radicacion_web`. Si el expediente tiene aseguradora y esa organización tiene su propia cuenta marcada, usa esa. Si hay dos candidatos del mismo alcance, no elige.
+8. Un buzón con aseguradora no asocia solo un expediente de otra aseguradora.
+
+### Worker y programador
+
+Hacen falta dos procesos aparte del sitio web. No los active en el VPS hasta autorizar el despliegue.
+
+- Worker: `php artisan queue:work --sleep=3 --tries=3`
+- Programador: `php artisan schedule:work` o cron `* * * * * php artisan schedule:run`
+
+Sin worker, el aviso de radicación queda en cola. Sin programador, no hay sincronización ni renovación del watch.
 
 ### Workspace
 1. Elegir **un** usuario piloto de pruebas (idealmente sin correo clínico real).  
@@ -64,8 +85,8 @@ Importar el CSV completado en la misma pantalla (no crea direcciones nuevas).
 
 ### Laravel (TI)
 ```env
-GMAIL_PILOT_MAILBOX=usuario-piloto@menteplena.com.co
-GMAIL_ALLOWED_MAILBOXES=usuario-piloto@menteplena.com.co
+GMAIL_PILOT_MAILBOX=callcenter@menteplena.com.co
+GMAIL_ALLOWED_MAILBOXES=callcenter@menteplena.com.co
 GMAIL_OAUTH_CLIENT_ID=...
 GMAIL_OAUTH_CLIENT_SECRET=...
 GMAIL_OAUTH_REDIRECT_URI="${APP_URL}/oauth/gmail/callback"

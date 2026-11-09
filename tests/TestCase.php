@@ -13,6 +13,18 @@ abstract class TestCase extends BaseTestCase
      */
     public function createApplication()
     {
+        foreach ([
+            'APP_ENV' => 'testing',
+            'DB_CONNECTION' => 'sqlite',
+            'DB_DATABASE' => ':memory:',
+            'DB_URL' => '',
+            'DB_HOST' => '',
+        ] as $nombre => $valor) {
+            putenv($nombre.'='.$valor);
+            $_ENV[$nombre] = $valor;
+            $_SERVER[$nombre] = $valor;
+        }
+
         $actual = getenv('PQRSD_LAB_PASSWORD');
         if ($actual === false || $actual === '') {
             $clave = 'Lab-'.bin2hex(random_bytes(18));

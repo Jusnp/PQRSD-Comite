@@ -1,35 +1,27 @@
 # Integración Google Workspace / Gmail API
 
-Estado del código: driver `google_api` implementado con cliente HTTP, historyId, recuperación 404, watch renovable y mocks de prueba. **La conexión real queda pendiente de credenciales y autorización institucional.**
+La conexión real sigue pendiente. Este despliegue no activa buzones ni cambia el correo de producción a Gmail.
 
-## Requisitos externos (administrador Google / Cloud)
+## Alcance aprobado
 
-1. Proyecto en Google Cloud con Gmail API habilitada.
-2. Credenciales:
-   - **Recomendado institucional:** Service Account + Domain-Wide Delegation (scopes `gmail.readonly`, `gmail.send`, `gmail.modify` según política).
-   - Alternativa: OAuth 2.0 de usuario de servicio controlado.
-3. Pub/Sub topic para `users.watch` (push a endpoint interno o cola).
-4. Lista blanca de buzones en `GMAIL_ALLOWED_MAILBOXES`.
-5. Cada `cuentas_correo.credential_ref` apunta a una variable de entorno (nunca secreto en BD).
+- OAuth web interno, un cliente por el proyecto de Google Cloud.
+- Alcance único: `https://www.googleapis.com/auth/gmail.modify`.
+- No pedir `gmail.send` ni el alcance total de la cuenta.
+- La cuenta de servicio permanece apagada: `GMAIL_SERVICE_ACCOUNT_ENABLED=false`.
+- Compose de producción sigue forzando `PQRSD_MAIL_DRIVER=mock` y `MAIL_MAILER=log`.
 
 ## Variables
 
-Ver `.env.production.example`:
+Los valores van en el entorno del servidor, fuera de Git. Nombres y procedimiento: `docs/guia-admin-google-workspace.md`.
 
-- `PQRSD_MAIL_DRIVER=google_api`
-- `GMAIL_PUBSUB_TOPIC=projects/.../topics/...`
-- `GMAIL_SERVICE_ACCOUNT_ENABLED=true` solo tras validar DWD
-- `MAIL_CRED_...=` token JSON o ruta a JSON de service account
+Durante el primer piloto, `GMAIL_PILOT_MAILBOX` y `GMAIL_ALLOWED_MAILBOXES` contienen solo el buzón autorizado. Una lista vacía rechaza OAuth en cualquier entorno y rechaza la API de Gmail en producción.
 
 ## Operación
 
-```bash
-php artisan pqrsd:sync-correos --sync --cuenta=ID
-php artisan pqrsd:gmail-renew-watch
-```
+No arrancar `queue:work` ni `schedule:run` hasta la activación explícita del buzón. El programador ya define sincronización, watch y respaldo, pero Compose no lo ejecuta.
 
-La renovación de watch está programada diariamente a las 03:15 America/Bogota.
+OAuth puede completarse con el buzón inactivo. Sync, la prueba de conexión y el envío siguen apagados hasta marcar la cuenta como activa.
 
 ## Pruebas locales
 
-Las pruebas Feature usan `FakeGmailApiClient` (sin red). No declarar recepción/envío real sin ambiente autorizado.
+Las pruebas Feature usan clientes falsos y no abren red. No declarar recepción ni envío real sin una ventana autorizada.

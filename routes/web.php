@@ -9,6 +9,7 @@ use App\Http\Controllers\Catalogo\ReglaSlaController;
 use App\Http\Controllers\Catalogo\SedeController;
 use App\Http\Controllers\Catalogo\TipoPqrsdController;
 use App\Http\Controllers\Correo\BandejaCorreoController;
+use App\Http\Controllers\Correo\CorreoSalidaController;
 use App\Http\Controllers\Correo\CuentaCorreoController;
 use App\Http\Controllers\AdjuntoPqrsdController;
 use App\Http\Controllers\Gmail\GmailOAuthController;
@@ -87,6 +88,10 @@ Route::middleware(['auth', 'cuenta.activa'])->group(function () {
     Route::post('/pqrsd/{pqrsd}/asignar', [PqrsdController::class, 'asignar'])
         ->middleware('permission:pqrsd.assign|pqrsd.manage')
         ->name('pqrsd.asignar');
+
+    Route::post('/pqrsd/{pqrsd}/correo-salidas/{salida}/reintentar', [CorreoSalidaController::class, 'reintentar'])
+        ->middleware('permission:pqrsd.update')
+        ->name('pqrsd.correo-salidas.reintentar');
 
     Route::post('/pqrsd/{pqrsd}/actuaciones', [PqrsdController::class, 'actuacion'])
         ->middleware('permission:pqrsd.update|pqrsd.manage')
@@ -226,6 +231,8 @@ Route::middleware(['auth', 'cuenta.activa'])->group(function () {
     Route::middleware('permission:correos.reply')->group(function () {
         Route::post('bandeja-correo/{mensaje}/responder', [BandejaCorreoController::class, 'responder'])
             ->name('bandeja-correo.responder');
+        Route::post('pqrsd/{pqrsd}/correo-responder', [CorreoSalidaController::class, 'enviarDesdeExpediente'])
+            ->name('pqrsd.correo-responder');
     });
 
     Route::middleware('permission:reportes.view')->group(function () {

@@ -19,6 +19,15 @@ class EmailSyncService
      */
     public function syncCuenta(CuentaCorreo $cuenta): array
     {
+        if (! $cuenta->activo) {
+            return [
+                'nuevos' => 0,
+                'duplicados' => 0,
+                'errores' => 0,
+                'detalle' => 'Buzón inactivo: no se consultó Gmail.',
+            ];
+        }
+
         $inicio = now('America/Bogota');
         $nuevos = 0;
         $duplicados = 0;
@@ -33,6 +42,7 @@ class EmailSyncService
 
         try {
             $provider = $this->providers->for($cuenta);
+            $sinInicio = $cuenta->sincronizar_desde === null;
             $mensajes = $provider->fetchNew($cuenta, $cuenta->cursor_sincronizacion);
 
             $maxUid = $cuenta->cursor_sincronizacion;
@@ -43,6 +53,7 @@ class EmailSyncService
                 if ($resultado['error']) {
                     $errores++;
                     $detalle[] = $resultado['error'];
+
                     continue;
                 }
 
@@ -77,6 +88,9 @@ class EmailSyncService
                 'ultimo_error' => $errores > 0 ? implode('; ', array_slice($detalle, 0, 3)) : null,
                 'intentos_fallidos' => $errores > 0 ? $cuenta->intentos_fallidos + 1 : 0,
                 'cursor_sincronizacion' => $nextCursor,
+                'sincronizar_desde' => $sinInicio && ! $incomplete
+                    ? now('America/Bogota')
+                    : $cuenta->sincronizar_desde,
             ]);
 
             $resultadoFinal = $incomplete ? ($nuevos > 0 ? 'parcial' : 'error') : 'ok';

@@ -11,7 +11,8 @@ use Illuminate\Support\Str;
 
 /**
  * OAuth 2.0 para Gmail (preferido frente a Domain-Wide Delegation).
- * Scopes mínimos: gmail.readonly + gmail.send (ajustar según política SSI).
+ * Alcance usado: gmail.modify. Cubre lectura, inserción en bandeja y envío.
+ * No pide gmail.send aparte: el proyecto de Google solo autorizó gmail.modify.
  */
 class GmailOAuthService
 {
@@ -59,11 +60,13 @@ class GmailOAuthService
 
     public function handleCallback(string $code, string $state): CuentaCorreo
     {
-        if ($state === '' || $state !== session('gmail_oauth_state')) {
+        $esperado = (string) session('gmail_oauth_state');
+        if ($code === '' || $state === '' || $esperado === '' || ! hash_equals($esperado, $state)) {
             throw GmailApiException::authFailed('state OAuth inválido');
         }
 
         $cuentaId = session('gmail_oauth_cuenta_id');
+        session()->forget(['gmail_oauth_state', 'gmail_oauth_cuenta_id']);
         $cuenta = CuentaCorreo::findOrFail($cuentaId);
         $this->assertMailboxAllowed($cuenta);
 
@@ -91,20 +94,32 @@ class GmailOAuthService
         if (isset($json['expires_in']) && ! isset($json['expires_at'])) {
             $json['expires_at'] = now('America/Bogota')->addSeconds((int) $json['expires_in'])->getTimestamp();
         }
+        if (empty($json['refresh_token'])) {
+            throw GmailApiException::authFailed('Google no entregó refresh_token. Hay que repetir el consentimiento.');
+        }
 
-        GmailOauthToken::storeFor(
-            $cuenta,
-            $json,
-            implode(' ', config('pqrsd_correo.gmail.oauth_scopes'))
-        );
+        $this->assertScopes((string) ($json['scope'] ?? ''));
+        $perfil = $this->perfilAutorizado($cuenta, (string) $json['access_token']);
+        $alcances = filled($json['scope'] ?? null)
+            ? (string) $json['scope']
+            : implode(' ', config('pqrsd_correo.gmail.oauth_scopes'));
+
+        GmailOauthToken::storeFor($cuenta, $json, $alcances);
 
         $cuenta->update([
             'tipo_integracion' => 'google_api',
+            'tipo_buzon' => in_array($cuenta->tipo_buzon, [null, '', 'desconocido', 'otro'], true)
+                ? 'individual'
+                : $cuenta->tipo_buzon,
+            'verificacion_buzon' => $perfil === strtolower($cuenta->direccion) ? 'usuario' : 'alias',
+            'buzon_canonico' => $perfil === strtolower($cuenta->direccion)
+                ? ($cuenta->buzon_canonico ?: $cuenta->direccion)
+                : ($cuenta->buzon_canonico ?: $perfil),
             'estado_conexion' => 'ok',
+            'estado_autorizacion' => 'autorizado',
+            'sincronizar_desde' => $cuenta->sincronizar_desde ?? now('America/Bogota'),
             'ultimo_error' => null,
         ]);
-
-        session()->forget(['gmail_oauth_state', 'gmail_oauth_cuenta_id']);
 
         Log::channel('correo_sync')->info('OAuth vinculado', [
             'cuenta' => $cuenta->direccion,
@@ -192,12 +207,14 @@ class GmailOAuthService
             throw GmailApiException::authFailed('Solo la cuenta piloto está autorizada: '.$pilot);
         }
 
-        if ($allowed !== [] && $allowed !== null) {
-            $ok = collect($allowed)->map(fn ($e) => strtolower(trim((string) $e)))
-                ->contains(strtolower($cuenta->direccion));
-            if (! $ok) {
-                throw GmailApiException::authFailed('Buzón fuera de lista blanca');
-            }
+        if ($allowed === [] || $allowed === null) {
+            throw GmailApiException::authFailed('GMAIL_ALLOWED_MAILBOXES está vacío');
+        }
+
+        $ok = collect($allowed)->map(fn ($e) => strtolower(trim((string) $e)))
+            ->contains(strtolower($cuenta->direccion));
+        if (! $ok) {
+            throw GmailApiException::authFailed('Buzón fuera de lista blanca');
         }
 
         if (in_array($cuenta->tipo_buzon, ['grupo'], true)) {
@@ -205,5 +222,47 @@ class GmailOAuthService
                 'Los grupos de Google no se sincronizan por Gmail API directamente. Use buzón_canonico o reenvío.'
             );
         }
+    }
+
+    private function assertScopes(string $otorgado): void
+    {
+        $esperados = collect(config('pqrsd_correo.gmail.oauth_scopes', []))
+            ->map(fn ($alcance) => strtolower(trim((string) $alcance)))
+            ->filter()
+            ->values();
+        $recibidos = collect(preg_split('/\s+/', trim($otorgado)) ?: [])
+            ->map(fn ($alcance) => strtolower(trim((string) $alcance)))
+            ->filter()
+            ->values();
+
+        $modificar = 'https://www.googleapis.com/auth/gmail.modify';
+        if ($recibidos->isEmpty()
+            || ! $recibidos->contains($modificar)
+            || $recibidos->diff($esperados)->isNotEmpty()) {
+            throw GmailApiException::authFailed('Google entregó alcances distintos de gmail.modify. No se guardó el token.');
+        }
+    }
+
+    private function perfilAutorizado(CuentaCorreo $cuenta, string $accessToken): string
+    {
+        $usuario = rawurlencode($cuenta->buzon_canonico ?: $cuenta->direccion);
+        $response = Http::withToken($accessToken)
+            ->get('https://gmail.googleapis.com/gmail/v1/users/'.$usuario.'/profile');
+
+        if (! $response->successful()) {
+            throw GmailApiException::authFailed('Gmail no devolvió el perfil. No se marcó como usuario ni como grupo.');
+        }
+
+        $email = strtolower((string) ($response->json('emailAddress') ?? ''));
+        $esperadas = array_values(array_filter([
+            strtolower($cuenta->direccion),
+            strtolower((string) $cuenta->buzon_canonico),
+        ]));
+
+        if ($email === '' || ! in_array($email, $esperadas, true)) {
+            throw GmailApiException::authFailed('El perfil de Gmail no coincide con la cuenta registrada.');
+        }
+
+        return $email;
     }
 }

@@ -58,6 +58,12 @@ class EmailReviewService
 
     public function asociarACaso(MensajeCorreo $mensaje, int $pqrsdId, User $usuario): MensajeCorreo
     {
+        $caso = \App\Models\Pqrsd::query()->findOrFail($pqrsdId);
+        $cuenta = $mensaje->cuenta;
+        if ($cuenta && ! app(SeleccionBuzonCorreo::class)->permiteAsociar($cuenta, $caso)) {
+            throw new \InvalidArgumentException('Ese mensaje pertenece a otro buzón y no se asocia a este expediente.');
+        }
+
         $mensaje->update([
             'pqrsd_id' => $pqrsdId,
             'clasificacion' => 'respuesta_caso',

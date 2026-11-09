@@ -17,5 +17,6 @@ readonly class OutboundMessageData
         public ?string $references = null,
         public array $cc = [],
         public array $adjuntos = [],
+        public ?string $rfcMessageId = null,
     ) {}
 }

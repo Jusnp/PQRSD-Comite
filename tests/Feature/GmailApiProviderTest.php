@@ -116,9 +116,44 @@ class GmailApiProviderTest extends TestCase
         putenv('MAIL_CRED_GMAIL_TEST=x');
         $_ENV['MAIL_CRED_GMAIL_TEST'] = 'x';
 
-        $msgs = $provider->fetchNew($this->cuenta(), '1');
+        $msgs = $provider->fetchNew($this->cuenta([
+            'sincronizar_desde' => now('America/Bogota')->subDay(),
+        ]), '1');
         $this->assertCount(1, $msgs);
         $this->assertSame('200', $provider->nextSyncCursor());
+    }
+
+    public function test_la_primera_sincronizacion_no_trae_historial(): void
+    {
+        $fake = new FakeGmailApiClient;
+        $fake->recentMessages = [['id' => 'viejo']];
+        $fake->messagesById['viejo'] = $this->sampleMessage('viejo');
+        $provider = new GoogleGmailMailProvider(new GmailCredentialResolver, $fake);
+
+        $msgs = $provider->fetchNew($this->cuenta([
+            'cursor_sincronizacion' => null,
+            'sincronizar_desde' => null,
+        ]), null);
+
+        $this->assertCount(0, $msgs);
+        $this->assertSame('100', $provider->nextSyncCursor());
+    }
+
+    public function test_un_mensaje_anterior_al_inicio_no_entra(): void
+    {
+        $fake = new FakeGmailApiClient;
+        $antiguo = $this->sampleMessage('antiguo');
+        $antiguo['internalDate'] = (string) (now('America/Bogota')->subYear()->getTimestamp() * 1000);
+        $fake->recentMessages = [['id' => 'antiguo']];
+        $fake->messagesById['antiguo'] = $antiguo;
+        $provider = new GoogleGmailMailProvider(new GmailCredentialResolver, $fake);
+
+        $msgs = $provider->fetchNew($this->cuenta([
+            'cursor_sincronizacion' => null,
+            'sincronizar_desde' => now('America/Bogota')->subDay(),
+        ]), null);
+
+        $this->assertCount(0, $msgs);
     }
 
     public function test_error_y_confirmacion_envio(): void

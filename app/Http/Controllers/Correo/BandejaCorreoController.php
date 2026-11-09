@@ -49,7 +49,11 @@ class BandejaCorreoController extends Controller
             ->orderBy('fecha_mensaje')
             ->get();
 
-        $casos = Pqrsd::query()->latest('id')->limit(50)->get(['id', 'radicado', 'solicitante_nombre']);
+        $casos = Pqrsd::query()->latest('id');
+        if ($mensaje->cuenta?->aseguradora_id) {
+            $casos->where('aseguradora_id', $mensaje->cuenta->aseguradora_id);
+        }
+        $casos = $casos->limit(50)->get(['id', 'radicado', 'solicitante_nombre']);
 
         return view('correo.bandeja.show', compact('mensaje', 'hilo', 'casos'));
     }
@@ -69,7 +73,11 @@ class BandejaCorreoController extends Controller
             'pqrsd_id' => ['required', 'exists:pqrsd,id'],
         ]);
 
-        $review->asociarACaso($mensaje, (int) $data['pqrsd_id'], Auth::user());
+        try {
+            $review->asociarACaso($mensaje, (int) $data['pqrsd_id'], Auth::user());
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['pqrsd_id' => $e->getMessage()]);
+        }
 
         return back()->with('success', 'Mensaje asociado al radicado.');
     }

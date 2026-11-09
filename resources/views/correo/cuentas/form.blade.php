@@ -18,7 +18,11 @@
 <div class="form-help">No seleccionar individual/alias/grupo sin evidencia de Admin Console.</div>
 </div>
 <div><label class="form-label">Buzón canónico (si alias/reenvío/grupo)</label>
-<input class="form-input" type="email" name="buzon_canonico" value="{{ old('buzon_canonico', $item->buzon_canonico) }}" placeholder="usuario-real@menteplena.com.co">
+<input class="form-input" type="email" name="buzon_canonico" value="{{ old('buzon_canonico', $item->buzon_canonico) }}" placeholder="usuario-real@dominio-autorizado">
+</div>
+<div><label class="form-label">Dirección visible</label>
+<input class="form-input" type="email" name="direccion_visible" value="{{ old('direccion_visible', $item->direccion_visible) }}">
+<div class="form-help">La que aparece en el mensaje. La API usa el buzón canónico.</div>
 </div>
 <div><label class="form-label">Responsable (nombre)</label><input class="form-input" name="responsable_nombre" value="{{ old('responsable_nombre', $item->responsable_nombre) }}"></div>
 <div><label class="form-label">Área responsable</label><input class="form-input" name="area_responsable" value="{{ old('area_responsable', $item->area_responsable) }}"></div>
@@ -65,8 +69,15 @@
 <option value="{{ $c }}" @selected(old('cifrado', $item->cifrado)===$c)>{{ $c }}</option>
 @endforeach
 </select></div>
-<div><label><input type="checkbox" name="activo" value="1" @checked(old('activo', $item->activo))> Activa</label></div>
+<div>
+    <label><input type="checkbox" name="activo" value="1" @checked(old('activo', $item->activo))> Activa</label>
+    <p class="form-help">Acción posterior a OAuth. Mientras esté desmarcada, el buzón no sincroniza ni envía.</p>
+</div>
 <div><label><input type="checkbox" name="es_buzon_central" value="1" @checked(old('es_buzon_central', $item->es_buzon_central))> Buzón central (reenvíos)</label></div>
+<div><label><input type="checkbox" name="recibe_radicacion_web" value="1" @checked(old('recibe_radicacion_web', $item->recibe_radicacion_web))> Recibe radicaciones web</label></div>
+@if($item->exists)
+<div><p class="form-help">Verificación Gmail: {{ $item->verificacion_buzon ?: 'pendiente' }}. No cambia hasta ejecutar la verificación con credencial.</p></div>
+@endif
 </div>
 <button class="btn btn-green" style="margin-top:16px" type="submit">Guardar</button>
 </form>

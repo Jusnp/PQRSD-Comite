@@ -33,6 +33,15 @@ interface GmailApiClient
     public function sendRaw(string $userId, string $rawRfc822): array;
 
     /**
+     * Inserta el mensaje en la bandeja (users.messages.insert).
+     * No usa messages.send: un envío a la propia cuenta queda en Enviados.
+     *
+     * @param  array<int, string>  $labelIds
+     * @return array{ok:bool,id:?string,threadId:?string,error:?string}
+     */
+    public function insertRaw(string $userId, string $rawRfc822, array $labelIds = ['INBOX', 'UNREAD']): array;
+
+    /**
      * @return array{ok:bool,historyId:?string,expiration:?string,error:?string}
      */
     public function watch(string $userId, string $topicName, array $labelIds = ['INBOX']): array;

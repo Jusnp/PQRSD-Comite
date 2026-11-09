@@ -30,6 +30,9 @@ class FakeGmailApiClient implements GmailApiClient
 
     public int $sendAttempts = 0;
 
+    /** @var array<int, array{userId:string,raw:string,labelIds:array<int, string>}> */
+    public array $inserted = [];
+
     public function listHistory(string $userId, string $startHistoryId, ?string $pageToken = null): array
     {
         $this->assertAuth();
@@ -77,6 +80,28 @@ class FakeGmailApiClient implements GmailApiClient
         }
 
         return ['ok' => true, 'id' => 'sent-'. $this->sendAttempts, 'threadId' => 'th-1', 'error' => null];
+    }
+
+    public function insertRaw(string $userId, string $rawRfc822, array $labelIds = ['INBOX', 'UNREAD']): array
+    {
+        $this->sendAttempts++;
+        $this->assertAuth();
+        $this->inserted[] = [
+            'userId' => $userId,
+            'raw' => $rawRfc822,
+            'labelIds' => $labelIds,
+        ];
+
+        if (! $this->sendOk) {
+            return ['ok' => false, 'id' => null, 'threadId' => null, 'error' => 'insert failed'];
+        }
+
+        return [
+            'ok' => true,
+            'id' => 'inbox-'.$this->sendAttempts,
+            'threadId' => 'thr-inbox-'.$this->sendAttempts,
+            'error' => null,
+        ];
     }
 
     public function watch(string $userId, string $topicName, array $labelIds = ['INBOX']): array

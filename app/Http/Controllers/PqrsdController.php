@@ -366,6 +366,10 @@ class PqrsdController extends Controller
             'regularizacion' => $regularizacion,
             'contactosRegularizacion' => $contactosRegularizacion,
             'notificaciones' => $notificaciones,
+            'salidasCorreo' => \Illuminate\Support\Facades\Schema::hasTable('correo_salidas')
+                ? $pqrsd->salidasCorreo()->get()
+                : collect(),
+            'mensajesCorreo' => $pqrsd->mensajesCorreo()->get(),
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
             'categorias' => CategoriaPqrsd::with('subcategorias')->where('activo', true)->orderBy('orden')->get(),
             'motivos' => MotivoPqrsd::with('subcategoriaSugerida.categoria')->where('activo', true)->orderBy('nombre')->get(),

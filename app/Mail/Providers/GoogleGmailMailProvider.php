@@ -58,7 +58,13 @@ class GoogleGmailMailProvider implements MailProvider
                         Log::channel('correo_sync')->warning('Gmail historyId expirado; recuperación deduplicada', [
                             'cuenta' => $cuenta->direccion,
                         ]);
-                        $batch = $client->listRecentMessages($userId, 'newer_than:7d');
+                        if (! $cuenta->sincronizar_desde) {
+                            $profile = $client->getProfile($userId);
+                            $this->nextSyncCursor = ($profile['ok'] ?? false) ? ($profile['historyId'] ?? null) : null;
+
+                            return collect();
+                        }
+                        $batch = $client->listRecentMessages($userId, $this->consultaDesde($cuenta));
                     } else {
                         throw $e;
                     }
@@ -68,8 +74,12 @@ class GoogleGmailMailProvider implements MailProvider
                 if (! ($profile['ok'] ?? false)) {
                     throw GmailApiException::authFailed($profile['error'] ?? 'perfil no disponible');
                 }
-                $batch = $client->listRecentMessages($userId, 'newer_than:2d');
-                $this->nextSyncCursor = $profile['historyId'] ?? $batch['historyId'] ?? null;
+                $this->nextSyncCursor = $profile['historyId'] ?? null;
+                if (! $cuenta->sincronizar_desde) {
+                    return collect();
+                }
+                $batch = $client->listRecentMessages($userId, $this->consultaDesde($cuenta));
+                $this->nextSyncCursor = $profile['historyId'] ?? $batch['historyId'] ?? $this->nextSyncCursor;
             }
 
             $mensajes = collect();
@@ -79,6 +89,9 @@ class GoogleGmailMailProvider implements MailProvider
                     continue;
                 }
                 $raw = $client->getMessage($userId, $id, 'full');
+                if (! $this->dentroDelInicio($raw, $cuenta)) {
+                    continue;
+                }
                 $mensajes->push($this->mapGmailMessage($raw, $cuenta));
             }
 
@@ -120,6 +133,7 @@ class GoogleGmailMailProvider implements MailProvider
     public function send(CuentaCorreo $cuenta, OutboundMessageData $mensaje): array
     {
         try {
+            $this->assertMailboxAllowed($cuenta);
             $client = $this->clientFor($cuenta);
             $userId = $this->credentials->delegatedUser($cuenta);
             $raw = $this->buildRfc822($cuenta, $mensaje);
@@ -135,13 +149,42 @@ class GoogleGmailMailProvider implements MailProvider
 
             return [
                 'ok' => true,
-                'message_id' => $result['id'] ? '<'.$result['id'].'@gmail.googleapis.com>' : null,
+                'message_id' => $mensaje->rfcMessageId ?: ($result['id'] ? '<'.$result['id'].'@gmail.googleapis.com>' : null),
+                'gmail_message_id' => $result['id'] ?? null,
+                'gmail_thread_id' => $result['threadId'] ?? null,
                 'error' => null,
             ];
         } catch (GmailApiException $e) {
             return [
                 'ok' => false,
                 'message_id' => null,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Coloca el aviso en INBOX. messages.send a la misma cuenta no lo garantiza.
+     *
+     * @param  array<int, string>  $labelIds
+     * @return array{ok:bool,id:?string,threadId:?string,error:?string}
+     */
+    public function insertarEnBandeja(CuentaCorreo $cuenta, string $rawRfc822, array $labelIds = ['INBOX', 'UNREAD']): array
+    {
+        try {
+            $this->assertMailboxAllowed($cuenta);
+            $client = $this->clientFor($cuenta);
+            $userId = $this->credentials->delegatedUser($cuenta);
+            if (! in_array('INBOX', $labelIds, true)) {
+                array_unshift($labelIds, 'INBOX');
+            }
+
+            return $client->insertRaw($userId, $rawRfc822, $labelIds);
+        } catch (GmailApiException $e) {
+            return [
+                'ok' => false,
+                'id' => null,
+                'threadId' => null,
                 'error' => $e->getMessage(),
             ];
         }
@@ -166,7 +209,7 @@ class GoogleGmailMailProvider implements MailProvider
                 $expira = null;
                 if (! empty($result['expiration']) && is_numeric($result['expiration'])) {
                     // Gmail watch expiration es epoch ms
-                    $expira = \Carbon\Carbon::createFromTimestampMs((int) $result['expiration'], 'America/Bogota');
+                    $expira = Carbon::createFromTimestampMs((int) $result['expiration'], 'America/Bogota');
                 }
                 $cuenta->update([
                     'config_extra' => $extra,
@@ -193,17 +236,55 @@ class GoogleGmailMailProvider implements MailProvider
         return new HttpGmailApiClient($token);
     }
 
+    private function consultaDesde(CuentaCorreo $cuenta): string
+    {
+        $dia = $cuenta->sincronizar_desde
+            ->copy()
+            ->timezone('America/Bogota')
+            ->subDay()
+            ->format('Y/m/d');
+
+        return 'after:'.$dia;
+    }
+
+    /**
+     * @param  array<string, mixed>  $raw
+     */
+    private function dentroDelInicio(array $raw, CuentaCorreo $cuenta): bool
+    {
+        if (! $cuenta->sincronizar_desde) {
+            return true;
+        }
+
+        $ms = (int) ($raw['internalDate'] ?? 0);
+        if ($ms <= 0) {
+            return false;
+        }
+
+        return Carbon::createFromTimestampMs($ms, 'America/Bogota')
+            ->greaterThanOrEqualTo($cuenta->sincronizar_desde);
+    }
+
     private function assertMailboxAllowed(CuentaCorreo $cuenta): void
     {
+        $pilot = config('pqrsd_correo.gmail.pilot_mailbox');
+        if (filled($pilot) && strtolower($cuenta->direccion) !== strtolower((string) $pilot)) {
+            throw new GmailApiException('Buzón fuera del piloto configurado.');
+        }
+
         $allowed = config('pqrsd_correo.gmail.allowed_mailboxes', []);
         if ($allowed === [] || $allowed === null) {
+            if (app()->environment('production')) {
+                throw new GmailApiException('GMAIL_ALLOWED_MAILBOXES está vacío');
+            }
+
             return;
         }
 
         $dir = strtolower($cuenta->direccion);
         $ok = collect($allowed)->map(fn ($e) => strtolower(trim((string) $e)))->contains($dir);
         if (! $ok) {
-            throw GmailApiException::authFailed('Buzón no autorizado: '.$cuenta->direccion);
+            throw new GmailApiException('Buzón no autorizado: '.$cuenta->direccion);
         }
     }
 
@@ -309,12 +390,15 @@ class GoogleGmailMailProvider implements MailProvider
     private function buildRfc822(CuentaCorreo $cuenta, OutboundMessageData $mensaje): string
     {
         $headers = [
-            'From: '.$cuenta->direccion,
+            'From: '.($cuenta->direccion_visible ?: $cuenta->direccion),
             'To: '.$mensaje->to,
             'Subject: '.$mensaje->subject,
             'MIME-Version: 1.0',
             'Content-Type: text/plain; charset=UTF-8',
         ];
+        if ($mensaje->rfcMessageId) {
+            $headers[] = 'Message-ID: '.$mensaje->rfcMessageId;
+        }
         if ($mensaje->inReplyTo) {
             $headers[] = 'In-Reply-To: '.$mensaje->inReplyTo;
         }

@@ -21,6 +21,10 @@ class CuentaCorreo extends Model
         'es_buzon_central',
         'tipo_buzon',
         'buzon_canonico',
+        'direccion_visible',
+        'recibe_radicacion_web',
+        'verificacion_buzon',
+        'sincronizar_desde',
         'tipo_integracion',
         'credential_ref',
         'host',
@@ -44,9 +48,11 @@ class CuentaCorreo extends Model
         return [
             'activo' => 'boolean',
             'es_buzon_central' => 'boolean',
+            'recibe_radicacion_web' => 'boolean',
             'config_extra' => 'array',
             'ultima_sincronizacion' => 'datetime',
             'watch_expira_en' => 'datetime',
+            'sincronizar_desde' => 'datetime',
             'fecha_ultima_validacion_inventario' => 'datetime',
         ];
     }

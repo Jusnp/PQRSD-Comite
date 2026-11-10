@@ -82,6 +82,8 @@ class GoogleGmailMailProvider implements MailProvider
                 $this->nextSyncCursor = $profile['historyId'] ?? $batch['historyId'] ?? $this->nextSyncCursor;
             }
 
+            $this->assertListaCompleta($batch);
+
             $mensajes = collect();
             foreach ($batch['messages'] as $ref) {
                 $id = $ref['id'] ?? null;
@@ -90,6 +92,9 @@ class GoogleGmailMailProvider implements MailProvider
                 }
                 $raw = $client->getMessage($userId, $id, 'full');
                 if (! $this->dentroDelInicio($raw, $cuenta)) {
+                    continue;
+                }
+                if (! $this->debeImportar($raw)) {
                     continue;
                 }
                 $mensajes->push($this->mapGmailMessage($raw, $cuenta));
@@ -102,6 +107,7 @@ class GoogleGmailMailProvider implements MailProvider
             return $mensajes->values();
         } catch (GmailApiException $e) {
             $this->syncIncomplete = true;
+            $this->nextSyncCursor = null;
             Log::channel('correo_sync')->warning('Gmail fetchNew falló', [
                 'cuenta' => $cuenta->direccion,
                 'status' => $e->statusCode,
@@ -244,7 +250,32 @@ class GoogleGmailMailProvider implements MailProvider
             ->subDay()
             ->format('Y/m/d');
 
-        return 'after:'.$dia;
+        return 'after:'.$dia.' -in:spam -in:trash -in:drafts -in:chats';
+    }
+
+    /**
+     * @param  array<string, mixed>  $batch
+     */
+    private function assertListaCompleta(array $batch): void
+    {
+        if (filled($batch['nextPageToken'] ?? null)) {
+            throw GmailApiException::temporary('Gmail devolvió páginas sin terminar. El cursor no avanza.');
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $raw
+     */
+    private function debeImportar(array $raw): bool
+    {
+        $etiquetas = array_map(fn ($etiqueta) => strtoupper((string) $etiqueta), $raw['labelIds'] ?? []);
+        foreach (['SPAM', 'TRASH', 'DRAFT', 'CHAT'] as $excluida) {
+            if (in_array($excluida, $etiquetas, true)) {
+                return false;
+            }
+        }
+
+        return ! (in_array('SENT', $etiquetas, true) && ! in_array('INBOX', $etiquetas, true));
     }
 
     /**

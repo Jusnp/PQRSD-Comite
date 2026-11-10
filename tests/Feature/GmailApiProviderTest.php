@@ -2,16 +2,18 @@
 
 namespace Tests\Feature;
 
+use App\Mail\DTO\OutboundMessageData;
 use App\Mail\Gmail\FakeGmailApiClient;
 use App\Mail\Gmail\GmailApiException;
 use App\Mail\Gmail\GmailCredentialResolver;
 use App\Mail\Providers\GoogleGmailMailProvider;
 use App\Models\CuentaCorreo;
+use App\Models\MensajeCorreo;
+use App\Models\Pqrsd;
 use App\Services\Correo\EmailSyncService;
 use Database\Seeders\CatalogosSeeder;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class GmailApiProviderTest extends TestCase
@@ -31,24 +33,34 @@ class GmailApiProviderTest extends TestCase
         ], $extra));
     }
 
-    private function sampleMessage(string $id = 'm1'): array
+    private function sampleMessage(string $id = 'm1', array $headers = [], array $labels = []): array
     {
-        return [
+        $cabeceras = [
+            ['name' => 'From', 'value' => 'ciudadano@example.test'],
+            ['name' => 'To', 'value' => 'pqrsd@menteplena.test'],
+            ['name' => 'Subject', 'value' => 'Queja de prueba'],
+            ['name' => 'Message-ID', 'value' => '<'.$id.'@example.test>'],
+            ['name' => 'Date', 'value' => now('America/Bogota')->toRfc2822String()],
+        ];
+        foreach ($headers as $nombre => $valor) {
+            $cabeceras[] = ['name' => $nombre, 'value' => $valor];
+        }
+
+        $mensaje = [
             'id' => $id,
             'threadId' => 't1',
             'internalDate' => (string) (now('America/Bogota')->getTimestamp() * 1000),
             'payload' => [
                 'mimeType' => 'text/plain',
-                'headers' => [
-                    ['name' => 'From', 'value' => 'ciudadano@example.test'],
-                    ['name' => 'To', 'value' => 'pqrsd@menteplena.test'],
-                    ['name' => 'Subject', 'value' => 'Queja de prueba'],
-                    ['name' => 'Message-ID', 'value' => '<'.$id.'@example.test>'],
-                    ['name' => 'Date', 'value' => now('America/Bogota')->toRfc2822String()],
-                ],
+                'headers' => $cabeceras,
                 'body' => ['data' => rtrim(strtr(base64_encode('Cuerpo de queja PQRSD'), '+/', '-_'), '=')],
             ],
         ];
+        if ($labels !== []) {
+            $mensaje['labelIds'] = $labels;
+        }
+
+        return $mensaje;
     }
 
     public function test_recepcion_nueva_y_dedupe(): void
@@ -164,7 +176,7 @@ class GmailApiProviderTest extends TestCase
         $_ENV['MAIL_CRED_GMAIL_TEST'] = 'x';
         $cuenta = $this->cuenta();
 
-        $ok = $provider->send($cuenta, new \App\Mail\DTO\OutboundMessageData(
+        $ok = $provider->send($cuenta, new OutboundMessageData(
             to: 'ciudadano@example.test',
             subject: 'Respuesta',
             bodyText: 'Texto de respuesta institucional',
@@ -173,7 +185,7 @@ class GmailApiProviderTest extends TestCase
         $this->assertNotNull($ok['message_id']);
 
         $fake->sendOk = false;
-        $fail = $provider->send($cuenta, new \App\Mail\DTO\OutboundMessageData(
+        $fail = $provider->send($cuenta, new OutboundMessageData(
             to: 'ciudadano@example.test',
             subject: 'Respuesta',
             bodyText: 'Texto',
@@ -199,5 +211,123 @@ class GmailApiProviderTest extends TestCase
         $r = app(EmailSyncService::class)->syncCuenta($cuenta->fresh());
         $this->assertGreaterThan(0, $r['errores']);
         $this->assertSame($antes, $cuenta->fresh()->cursor_sincronizacion);
+    }
+
+    public function test_mas_de_cincuenta_mensajes_se_importan_y_el_cursor_avanza(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $this->seed(CatalogosSeeder::class);
+        putenv('MAIL_CRED_GMAIL_TEST=x');
+        $_ENV['MAIL_CRED_GMAIL_TEST'] = 'x';
+
+        $fake = new FakeGmailApiClient;
+        for ($i = 1; $i <= 51; $i++) {
+            $id = 'lote-'.$i;
+            $fake->historyMessages[] = ['id' => $id];
+            $fake->messagesById[$id] = $this->sampleMessage($id, [], ['INBOX']);
+        }
+        $provider = new GoogleGmailMailProvider(new GmailCredentialResolver, $fake);
+        $this->app->instance(GoogleGmailMailProvider::class, $provider);
+
+        $cuenta = $this->cuenta(['cursor_sincronizacion' => '50']);
+        $resultado = app(EmailSyncService::class)->syncCuenta($cuenta->fresh());
+
+        $this->assertSame(51, $resultado['nuevos']);
+        $this->assertSame(0, $resultado['errores']);
+        $this->assertSame('102', $cuenta->fresh()->cursor_sincronizacion);
+        $this->assertSame(0, Pqrsd::query()->count());
+    }
+
+    public function test_pagina_pendiente_no_avanza_el_cursor_ni_la_fecha_de_inicio(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        putenv('MAIL_CRED_GMAIL_TEST=x');
+        $_ENV['MAIL_CRED_GMAIL_TEST'] = 'x';
+
+        $inicio = now('America/Bogota')->subDay();
+        $fake = new FakeGmailApiClient;
+        $fake->historyNextPageToken = 'pagina-2';
+        $fake->historyMessages = [['id' => 'm1']];
+        $fake->messagesById['m1'] = $this->sampleMessage('m1', [], ['INBOX']);
+        $provider = new GoogleGmailMailProvider(new GmailCredentialResolver, $fake);
+        $this->app->instance(GoogleGmailMailProvider::class, $provider);
+
+        $cuenta = $this->cuenta([
+            'cursor_sincronizacion' => '50',
+            'sincronizar_desde' => $inicio,
+        ])->fresh();
+        $fechaGuardada = $cuenta->sincronizar_desde->format('Y-m-d H:i:s');
+        $resultado = app(EmailSyncService::class)->syncCuenta($cuenta);
+
+        $this->assertGreaterThan(0, $resultado['errores']);
+        $this->assertSame('50', $cuenta->fresh()->cursor_sincronizacion);
+        $this->assertSame(0, MensajeCorreo::query()->count());
+        $this->assertSame($fechaGuardada, $cuenta->fresh()->sincronizar_desde->format('Y-m-d H:i:s'));
+    }
+
+    public function test_un_fallo_intermedio_no_guarda_los_mensajes_ya_listados(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        putenv('MAIL_CRED_GMAIL_TEST=x');
+        $_ENV['MAIL_CRED_GMAIL_TEST'] = 'x';
+
+        $fake = new FakeGmailApiClient;
+        $fake->historyMessages = [['id' => 'ok-1'], ['id' => 'falta']];
+        $fake->messagesById['ok-1'] = $this->sampleMessage('ok-1', [], ['INBOX']);
+        $provider = new GoogleGmailMailProvider(new GmailCredentialResolver, $fake);
+        $this->app->instance(GoogleGmailMailProvider::class, $provider);
+
+        $cuenta = $this->cuenta(['cursor_sincronizacion' => '50']);
+        $resultado = app(EmailSyncService::class)->syncCuenta($cuenta->fresh());
+
+        $this->assertGreaterThan(0, $resultado['errores']);
+        $this->assertSame('50', $cuenta->fresh()->cursor_sincronizacion);
+        $this->assertSame(0, MensajeCorreo::query()->count());
+    }
+
+    public function test_no_importa_enviados_ni_avisos_propios_como_expediente(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $this->seed(CatalogosSeeder::class);
+        putenv('MAIL_CRED_GMAIL_TEST=x');
+        $_ENV['MAIL_CRED_GMAIL_TEST'] = 'x';
+
+        $fake = new FakeGmailApiClient;
+        $fake->historyMessages = [['id' => 'recibido'], ['id' => 'enviado'], ['id' => 'aviso']];
+        $fake->messagesById['recibido'] = $this->sampleMessage('recibido', [], ['INBOX']);
+        $fake->messagesById['enviado'] = $this->sampleMessage('enviado', [], ['SENT']);
+        $fake->messagesById['aviso'] = $this->sampleMessage('aviso', [
+            'X-PQRSD-Origen' => 'radicacion-web',
+            'X-PQRSD-Radicado' => 'PQRSD-2026-000001',
+        ], ['INBOX']);
+        $provider = new GoogleGmailMailProvider(new GmailCredentialResolver, $fake);
+        $this->app->instance(GoogleGmailMailProvider::class, $provider);
+
+        $cuenta = $this->cuenta(['cursor_sincronizacion' => '50']);
+        $resultado = app(EmailSyncService::class)->syncCuenta($cuenta->fresh());
+
+        $this->assertSame(2, $resultado['nuevos']);
+        $this->assertSame(0, Pqrsd::query()->count());
+        $this->assertDatabaseMissing('mensajes_correo', ['gmail_message_id' => 'enviado']);
+        $this->assertDatabaseHas('mensajes_correo', [
+            'gmail_message_id' => 'aviso',
+            'clasificacion' => 'ruido',
+        ]);
+    }
+
+    public function test_la_consulta_de_recuperacion_excluye_spam_borradores_y_papelera(): void
+    {
+        $fake = new FakeGmailApiClient;
+        $provider = new GoogleGmailMailProvider(new GmailCredentialResolver, $fake);
+        $provider->fetchNew($this->cuenta([
+            'cursor_sincronizacion' => null,
+            'sincronizar_desde' => now('America/Bogota')->subDay(),
+        ]), null);
+
+        $this->assertStringContainsString('after:', (string) $fake->lastListQuery);
+        $this->assertStringContainsString('-in:spam', (string) $fake->lastListQuery);
+        $this->assertStringContainsString('-in:trash', (string) $fake->lastListQuery);
+        $this->assertStringContainsString('-in:drafts', (string) $fake->lastListQuery);
+        $this->assertStringContainsString('-in:chats', (string) $fake->lastListQuery);
     }
 }

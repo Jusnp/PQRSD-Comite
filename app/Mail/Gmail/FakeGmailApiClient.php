@@ -33,6 +33,12 @@ class FakeGmailApiClient implements GmailApiClient
     /** @var array<int, array{userId:string,raw:string,labelIds:array<int, string>}> */
     public array $inserted = [];
 
+    public ?string $historyNextPageToken = null;
+
+    public ?string $recentNextPageToken = null;
+
+    public ?string $lastListQuery = null;
+
     public function listHistory(string $userId, string $startHistoryId, ?string $pageToken = null): array
     {
         $this->assertAuth();
@@ -46,16 +52,19 @@ class FakeGmailApiClient implements GmailApiClient
         return [
             'historyId' => (string) ((int) $startHistoryId + count($this->historyMessages) + 1),
             'messages' => $this->historyMessages,
+            'nextPageToken' => $this->historyNextPageToken,
         ];
     }
 
     public function listRecentMessages(string $userId, ?string $query = null, int $maxResults = 50): array
     {
         $this->assertAuth();
+        $this->lastListQuery = $query;
 
         return [
             'historyId' => $this->profileHistoryId,
-            'messages' => array_slice($this->recentMessages, 0, $maxResults),
+            'messages' => $this->recentMessages,
+            'nextPageToken' => $this->recentNextPageToken,
         ];
     }
 
@@ -79,7 +88,7 @@ class FakeGmailApiClient implements GmailApiClient
             return ['ok' => false, 'id' => null, 'threadId' => null, 'error' => 'send failed'];
         }
 
-        return ['ok' => true, 'id' => 'sent-'. $this->sendAttempts, 'threadId' => 'th-1', 'error' => null];
+        return ['ok' => true, 'id' => 'sent-'.$this->sendAttempts, 'threadId' => 'th-1', 'error' => null];
     }
 
     public function insertRaw(string $userId, string $rawRfc822, array $labelIds = ['INBOX', 'UNREAD']): array

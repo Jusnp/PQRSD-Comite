@@ -3,22 +3,29 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActuacionPqrsd;
+use App\Models\AreaInstitucional;
 use App\Models\Aseguradora;
 use App\Models\AuditoriaPqrsd;
 use App\Models\CanalIngreso;
 use App\Models\CategoriaPqrsd;
 use App\Models\ContactoRegularizacionRadicado;
+use App\Models\HistorialEstadoPqrsd;
+use App\Models\MensajeCorreo;
 use App\Models\MotivoPqrsd;
-use App\Models\SubcategoriaPqrsd;
+use App\Models\NotificacionPqrsd;
 use App\Models\Pqrsd;
 use App\Models\RadicadoAlias;
 use App\Models\Sede;
+use App\Models\SubcategoriaPqrsd;
 use App\Models\TipoPqrsd;
 use App\Models\User;
 use App\Services\AdjuntoPqrsdService;
+use App\Services\IndicadoresPqrsdService;
 use App\Services\PqrsdService;
 use App\Services\ResolucionRadicado;
+use App\Services\SlaCalculator;
 use App\Services\VencimientoService;
+use App\Support\MedioRespuesta;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -123,7 +130,7 @@ class PqrsdController extends Controller
         }
 
         if ($request->filled('estado_cumplimiento')) {
-            app(\App\Services\SlaCalculator::class)->restringirConsulta(
+            app(SlaCalculator::class)->restringirConsulta(
                 $query,
                 (string) $request->string('estado_cumplimiento')
             );
@@ -235,8 +242,21 @@ class PqrsdController extends Controller
             || $request->filled('clasificacion')
             || $request->boolean('avanzados');
 
+        $correosPendientes = collect();
+        $correosPendientesTotal = 0;
+        if (Auth::user()->can('correos.review')) {
+            $pendientes = MensajeCorreo::query()
+                ->with('cuenta:id,direccion')
+                ->visiblesPara(Auth::user())
+                ->sinExpediente();
+            $correosPendientesTotal = (clone $pendientes)->count();
+            $correosPendientes = (clone $pendientes)->latest('fecha_mensaje')->limit(8)->get();
+        }
+
         return view('pqrsd.index', [
             'items' => $items,
+            'correosPendientes' => $correosPendientes,
+            'correosPendientesTotal' => $correosPendientesTotal,
             'aliasPorExpediente' => $aliasPorExpediente,
             'aliasPorNumero' => $aliasPorNumero,
             'avisoRadicadoCompartido' => $avisoRadicadoCompartido,
@@ -245,9 +265,9 @@ class PqrsdController extends Controller
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
             'motivos' => $motivosQuery->get(),
             'canales' => CanalIngreso::where('activo', true)->orderBy('nombre')->get(),
-            'mediosRespuesta' => \App\Support\MedioRespuesta::paraConsulta(),
+            'mediosRespuesta' => MedioRespuesta::paraConsulta(),
             'tiposDocumentoAvanzados' => $this->tiposDocumentoAvanzados(),
-            'resumen' => app(\App\Services\IndicadoresPqrsdService::class)->resumenOperativo(
+            'resumen' => app(IndicadoresPqrsdService::class)->resumenOperativo(
                 Pqrsd::query()->when(! Auth::user()->can('pqrsd.view_all'), function ($q) {
                     $uid = Auth::id();
                     $q->where(function ($inner) use ($uid) {
@@ -353,7 +373,7 @@ class PqrsdController extends Controller
         $regularizacion = $pqrsd->auditorias->firstWhere('accion', 'regularizacion_radicado');
 
         $plazo = $this->vencimientoService->snapshot($pqrsd);
-        $notificaciones = \App\Models\NotificacionPqrsd::where('pqrsd_id', $pqrsd->id)
+        $notificaciones = NotificacionPqrsd::where('pqrsd_id', $pqrsd->id)
             ->latest()
             ->limit(20)
             ->get();
@@ -366,14 +386,14 @@ class PqrsdController extends Controller
             'regularizacion' => $regularizacion,
             'contactosRegularizacion' => $contactosRegularizacion,
             'notificaciones' => $notificaciones,
-            'salidasCorreo' => \Illuminate\Support\Facades\Schema::hasTable('correo_salidas')
+            'salidasCorreo' => Schema::hasTable('correo_salidas')
                 ? $pqrsd->salidasCorreo()->get()
                 : collect(),
             'mensajesCorreo' => $pqrsd->mensajesCorreo()->get(),
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
             'categorias' => CategoriaPqrsd::with('subcategorias')->where('activo', true)->orderBy('orden')->get(),
             'motivos' => MotivoPqrsd::with('subcategoriaSugerida.categoria')->where('activo', true)->orderBy('nombre')->get(),
-            'areas' => \App\Models\AreaInstitucional::where('activo', true)->orderBy('orden')->orderBy('nombre')->get(),
+            'areas' => AreaInstitucional::where('activo', true)->orderBy('orden')->orderBy('nombre')->get(),
         ]);
     }
 
@@ -591,8 +611,8 @@ class PqrsdController extends Controller
         }
 
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $pqrsd, $data, $estadoSolicitado, $publicarPortal, $registrarEnvio) {
-                $caso = \App\Models\Pqrsd::bloquearParaEscritura(
+            DB::transaction(function () use ($pqrsd, $data, $estadoSolicitado, $publicarPortal, $registrarEnvio) {
+                $caso = Pqrsd::bloquearParaEscritura(
                     (int) $pqrsd->id,
                     $data['expediente_version'],
                     versionObligatoria: true
@@ -621,7 +641,7 @@ class PqrsdController extends Controller
                 if (! $esComunicacion) {
                     $caso->update($updates);
 
-                    \App\Models\ActuacionPqrsd::create([
+                    ActuacionPqrsd::create([
                         'pqrsd_id' => $caso->id,
                         'usuario_id' => Auth::id(),
                         'tipo' => 'respuesta_fondo',
@@ -630,7 +650,7 @@ class PqrsdController extends Controller
                         'es_interna' => false,
                     ]);
 
-                    \App\Models\HistorialEstadoPqrsd::create([
+                    HistorialEstadoPqrsd::create([
                         'pqrsd_id' => $caso->id,
                         'usuario_id' => Auth::id(),
                         'campo' => 'respuesta_estado',
@@ -679,7 +699,7 @@ class PqrsdController extends Controller
                     ? 'Evidencia de comunicación registrada'
                     : 'Respuesta disponible en consulta segura';
 
-                \App\Models\ActuacionPqrsd::create([
+                ActuacionPqrsd::create([
                     'pqrsd_id' => $caso->id,
                     'usuario_id' => Auth::id(),
                     'tipo' => 'respuesta_fondo',
@@ -692,7 +712,7 @@ class PqrsdController extends Controller
                     'es_interna' => false,
                 ]);
 
-                \App\Models\HistorialEstadoPqrsd::create([
+                HistorialEstadoPqrsd::create([
                     'pqrsd_id' => $caso->id,
                     'usuario_id' => Auth::id(),
                     'campo' => 'respuesta_estado',

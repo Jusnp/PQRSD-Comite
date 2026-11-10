@@ -32,6 +32,9 @@
         <h2>Operación</h2>
         @can('pqrsd.view')
             <a href="{{ route('pqrsd.index') }}" @if(request()->routeIs('pqrsd.index')) aria-current="page" @endif>Bandeja de PQRSD</a>
+            @can('correos.review')
+                <a href="{{ route('pqrsd.index') }}#correos-pendientes" @if(request()->routeIs('bandeja-correo.*')) aria-current="page" @endif>Correos pendientes</a>
+            @endcan
             <a href="{{ route('vencimientos.proximos') }}" @if(request()->routeIs('vencimientos.*')) aria-current="page" @endif>Vencimientos</a>
         @endcan
         @can('reportes.view')
@@ -136,6 +139,9 @@
         <nav class="pqrsd-nav" aria-label="Accesos rápidos">
             @can('pqrsd.view')
                 <a href="{{ route('pqrsd.index') }}" class="{{ request()->routeIs('pqrsd.index') ? 'is-active' : '' }}">Bandeja</a>
+                @can('correos.review')
+                    <a href="{{ route('pqrsd.index') }}#correos-pendientes" class="{{ request()->routeIs('bandeja-correo.*') ? 'is-active' : '' }}">Correos pendientes</a>
+                @endcan
                 <a href="{{ route('vencimientos.proximos') }}" class="{{ request()->routeIs('vencimientos.*') ? 'is-active' : '' }}">Vencimientos</a>
             @endcan
             @can('reportes.view')

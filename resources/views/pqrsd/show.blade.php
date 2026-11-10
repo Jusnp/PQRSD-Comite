@@ -386,10 +386,52 @@
     </div>
 </details>
 
+@can('correos.review')
+<details class="exp-section card" id="sec-correos-vinculados" open>
+    <summary class="exp-section-summary">
+        <span class="exp-section-title">Correos electrónicos vinculados</span>
+        <span class="exp-section-meta muted">{{ $mensajesCorreo->count() }}</span>
+    </summary>
+    <div class="exp-section-body card-pad">
+        <p class="muted" style="margin-top:0">Estos mensajes pertenecen a este expediente. No crean otro radicado.</p>
+        @if($mensajesCorreo->isEmpty())
+            <p>No hay correos vinculados.</p>
+        @else
+            <div class="table-wrap">
+                <table class="pqrsd-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Remitente</th>
+                            <th scope="col">Asunto</th>
+                            <th scope="col">Fecha</th>
+                            <th scope="col">Buzón</th>
+                            <th scope="col">Estado</th>
+                            <th scope="col">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($mensajesCorreo as $mensaje)
+                            <tr>
+                                <td>{{ $mensaje->remitente_nombre ?: $mensaje->remitente }}<div class="muted">{{ $mensaje->remitente }}</div></td>
+                                <td>{{ $mensaje->asunto ?: '(sin asunto)' }}</td>
+                                <td>{{ $mensaje->fecha_mensaje?->timezone('America/Bogota')->format('d/m/Y H:i') }}</td>
+                                <td>{{ $mensaje->cuenta?->direccion }}</td>
+                                <td>{{ $mensaje->etiquetaRevision() }}</td>
+                                <td><a href="{{ route('bandeja-correo.show', $mensaje) }}">Ver conversación y responder</a></td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+    </div>
+</details>
+@endcan
+
 <details class="exp-section card" id="sec-correo">
     <summary class="exp-section-summary">
         <span class="exp-section-title">Correo institucional</span>
-        <span class="exp-section-meta muted">{{ $salidasCorreo->count() + $mensajesCorreo->count() }}</span>
+        <span class="exp-section-meta muted">{{ $salidasCorreo->count() + (auth()->user()?->can('correos.review') ? $mensajesCorreo->count() : 0) }}</span>
     </summary>
     <div class="exp-section-body card-pad">
         <p class="muted" style="margin-top:0">El aviso de radicación web no copia el relato ni datos de contacto. Si no hay credencial, queda en cola y no sale de este servidor.</p>
@@ -412,6 +454,7 @@
         @empty
             <p class="muted">No hay avisos en cola.</p>
         @endforelse
+        @can('correos.review')
         @foreach($mensajesCorreo as $mensaje)
             <p>
                 <strong>{{ $mensaje->direccion }}</strong>
@@ -421,7 +464,20 @@
             </p>
             <p class="muted">{{ $mensaje->asunto }} · Gmail {{ $mensaje->gmail_message_id ?: '—' }} · Message-ID {{ $mensaje->message_id }}</p>
         @endforeach
+        @endcan
         @if(auth()->user()?->can('correos.reply'))
+            @php
+                $cuentaRespuesta = $mensajesCorreo
+                    ->where('direccion', 'entrante')
+                    ->filter(fn ($item) => strtolower((string) $item->remitente) === strtolower((string) $pqrsd->solicitante_email))
+                    ->sortByDesc(fn ($item) => $item->fecha_mensaje?->getTimestamp() ?? 0)
+                    ->first()?->cuenta;
+                $envioDesdeExpedienteDeshabilitado = $cuentaRespuesta && ! $cuentaRespuesta->activo;
+            @endphp
+            @if($envioDesdeExpedienteDeshabilitado)
+                <p role="status" style="margin-top:16px">Envío deshabilitado: cuenta de correo inactiva</p>
+                <button class="btn btn-green" type="button" disabled>Enviar respuesta</button>
+            @else
             <form method="POST" action="{{ route('pqrsd.correo-responder', $pqrsd) }}" style="margin-top:16px">
                 @csrf
                 <label class="form-label" for="correo-destinatario">Destinatario</label>
@@ -431,6 +487,7 @@
                 <p class="muted">Usa el mismo envío que la bandeja. Solo sale si hay un buzón activo y credencial. No copia el relato del expediente.</p>
                 <button class="btn btn-green" type="submit">Enviar respuesta</button>
             </form>
+            @endif
         @endif
     </div>
 </details>

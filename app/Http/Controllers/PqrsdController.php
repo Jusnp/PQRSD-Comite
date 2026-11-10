@@ -389,7 +389,7 @@ class PqrsdController extends Controller
             'salidasCorreo' => Schema::hasTable('correo_salidas')
                 ? $pqrsd->salidasCorreo()->get()
                 : collect(),
-            'mensajesCorreo' => $pqrsd->mensajesCorreo()->get(),
+            'mensajesCorreo' => $pqrsd->mensajesCorreo()->with('cuenta')->get(),
             'tipos' => TipoPqrsd::where('activo', true)->orderBy('orden')->get(),
             'categorias' => CategoriaPqrsd::with('subcategorias')->where('activo', true)->orderBy('orden')->get(),
             'motivos' => MotivoPqrsd::with('subcategoriaSugerida.categoria')->where('activo', true)->orderBy('nombre')->get(),

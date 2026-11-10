@@ -6,6 +6,7 @@ use App\Models\Aseguradora;
 use App\Models\MensajeCorreo;
 use App\Models\Pqrsd;
 use App\Models\Sede;
+use App\Services\IndicadoresPqrsdService;
 use App\Services\ReporteService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -25,7 +26,7 @@ class DashboardController extends Controller
 
         $casosPanel = (clone $base)->with('encuesta')->get();
         $vigente = $casosPanel->countBy(fn (Pqrsd $c) => $c->cumplimientoVigente());
-        $operativo = app(\App\Services\IndicadoresPqrsdService::class)->resumenOperativo($casosPanel);
+        $operativo = app(IndicadoresPqrsdService::class)->resumenOperativo($casosPanel);
 
         $stats = [
             'total' => (clone $base)->count(),
@@ -40,7 +41,7 @@ class DashboardController extends Controller
             'vitales_menores' => (clone $base)->where('nivel_riesgo', 'vital_menor')->count(),
             'pendientes_clasificacion' => (clone $base)->where('estado_operativo', 'pendiente_clasificacion')->count(),
             'correos_pendientes' => Auth::user()->can('correos.review')
-                ? MensajeCorreo::pendientesRevision()->count()
+                ? MensajeCorreo::query()->visiblesPara(Auth::user())->sinExpediente()->count()
                 : 0,
             'tiempo_promedio_horas' => $indicadores['tiempo_promedio_horas'],
             'satisfaccion_promedio' => $operativo['satisfaccion_promedio'],

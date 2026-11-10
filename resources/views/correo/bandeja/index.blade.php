@@ -1,7 +1,7 @@
 @extends('layouts.pqrsd')
 @section('title', 'Bandeja de correo')
-@section('heading', 'Bandeja de recepción')
-@section('subheading', 'Revisión humana de mensajes importados')
+@section('heading', 'Correos pendientes de radicación')
+@section('subheading', 'Revisión humana antes de crear un expediente')
 @section('content')
 <div class="pqrsd-nav" style="margin-top:0">
     @foreach(['pendientes'=>'Pendientes','respuestas'=>'Respuestas','ruido'=>'Ruido/descartes','todos'=>'Todos'] as $key=>$label)
@@ -20,7 +20,7 @@
 <td>{{ $item->cuenta?->direccion }}@if($item->destinatario_original)<div class="muted">Orig: {{ $item->destinatario_original }}</div>@endif</td>
 <td>{{ $item->remitente }}</td>
 <td><a href="{{ route('bandeja-correo.show', $item) }}">{{ $item->asunto ?: '(sin asunto)' }}</a></td>
-<td><span class="badge badge-muted">{{ str_replace('_',' ', $item->clasificacion) }}</span></td>
+<td><span class="badge badge-muted">{{ $item->etiquetaRevision() }}</span></td>
 <td>
     @if($item->pqrsd)
         <a href="{{ route('pqrsd.show', $item->pqrsd) }}">{{ $item->pqrsd->radicado }}</a>
@@ -30,7 +30,7 @@
 </td>
 </tr>
 @empty
-<tr><td colspan="6">No hay mensajes en este filtro. Ejecute <code>php artisan pqrsd:sync-correos --sync</code>.</td></tr>
+<tr><td colspan="6">No hay correos pendientes de radicación.</td></tr>
 @endforelse
 </tbody>
 </table>

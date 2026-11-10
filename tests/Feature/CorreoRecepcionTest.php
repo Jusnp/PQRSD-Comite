@@ -3,21 +3,21 @@
 namespace Tests\Feature;
 
 use App\Mail\DTO\InboundMessageData;
+use App\Mail\MailProviderManager;
+use App\Models\CanalIngreso;
 use App\Models\CuentaCorreo;
 use App\Models\MensajeCorreo;
-use App\Models\Pqrsd;
 use App\Models\User;
 use App\Services\Correo\EmailClassifier;
 use App\Services\Correo\EmailIngestionService;
 use App\Services\Correo\EmailReplyService;
-use App\Services\Correo\EmailReviewService;
 use App\Services\Correo\EmailSyncService;
+use App\Services\PqrsdService;
 use Carbon\Carbon;
 use Database\Seeders\CatalogosSeeder;
 use Database\Seeders\CuentasCorreoSeeder;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 class CorreoRecepcionTest extends TestCase
@@ -55,8 +55,8 @@ class CorreoRecepcionTest extends TestCase
         $user = User::factory()->create(['activo' => true]);
         $user->assignRole('auxiliar_pqrsd');
 
-        $canal = \App\Models\CanalIngreso::where('codigo', 'CORREO')->firstOrFail();
-        $caso = app(\App\Services\PqrsdService::class)->radicarManual([
+        $canal = CanalIngreso::where('codigo', 'CORREO')->firstOrFail();
+        $caso = app(PqrsdService::class)->radicarManual([
             'canal_ingreso_id' => $canal->id,
             'nivel_riesgo' => 'ordinario',
             'descripcion' => 'Caso base ficticio',
@@ -171,6 +171,16 @@ class CorreoRecepcionTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('bandeja-correo.confirmar', $mensaje))
+            ->assertRedirect(route('bandeja-correo.radicar', $mensaje));
+        $this->assertNull($mensaje->fresh()->pqrsd_id);
+
+        $this->actingAs($user)
+            ->post(route('bandeja-correo.radicar.store', $mensaje), [
+                'solicitante_nombre' => 'Ciudadano de prueba',
+                'solicitante_email' => 'ciudadano@example.test',
+                'descripcion' => 'Hechos revisados antes de radicar el correo.',
+                'nivel_riesgo' => 'pendiente',
+            ])
             ->assertRedirect();
 
         $mensaje->refresh();
@@ -196,7 +206,7 @@ class CorreoRecepcionTest extends TestCase
             'credential_ref' => 'MAIL_CRED_GESTIONSAVIA',
         ]);
 
-        $test = app(\App\Mail\MailProviderManager::class)->for($cuenta)->testConnection($cuenta);
+        $test = app(MailProviderManager::class)->for($cuenta)->testConnection($cuenta);
         $this->assertFalse($test['ok']);
         $this->assertStringContainsString('MAIL_CRED_GESTIONSAVIA', $test['detalle']);
     }

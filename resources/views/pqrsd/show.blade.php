@@ -426,7 +426,7 @@
                 @csrf
                 <label class="form-label" for="correo-destinatario">Destinatario</label>
                 <input class="form-input" id="correo-destinatario" type="email" name="destinatario" value="{{ old('destinatario', $pqrsd->solicitante_email) }}" required>
-                <label class="form-label" for="correo-cuerpo">Respuesta por el buzón de la cuenta</label>
+                <label class="form-label" for="correo-cuerpo">Respuesta por el buzón de origen</label>
                 <textarea class="form-input" id="correo-cuerpo" name="cuerpo" rows="4" required minlength="10">{{ old('cuerpo', $pqrsd->respuesta_consulta_texto) }}</textarea>
                 <p class="muted">Usa el mismo envío que la bandeja. Solo sale si hay un buzón activo y credencial. No copia el relato del expediente.</p>
                 <button class="btn btn-green" type="submit">Enviar respuesta</button>

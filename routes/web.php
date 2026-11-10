@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdjuntoPqrsdController;
 use App\Http\Controllers\Catalogo\AreaInstitucionalController;
 use App\Http\Controllers\Catalogo\AseguradoraController;
 use App\Http\Controllers\Catalogo\CanalIngresoController;
@@ -11,15 +12,14 @@ use App\Http\Controllers\Catalogo\TipoPqrsdController;
 use App\Http\Controllers\Correo\BandejaCorreoController;
 use App\Http\Controllers\Correo\CorreoSalidaController;
 use App\Http\Controllers\Correo\CuentaCorreoController;
-use App\Http\Controllers\AdjuntoPqrsdController;
 use App\Http\Controllers\Gmail\GmailOAuthController;
 use App\Http\Controllers\Gmail\GmailPubSubController;
+use App\Http\Controllers\IndicadoresPqrsdController;
 use App\Http\Controllers\OpsHealthController;
 use App\Http\Controllers\PqrsdController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\RemisionInternaController;
 use App\Http\Controllers\Publico\FormularioPublicoController;
-use App\Http\Controllers\IndicadoresPqrsdController;
+use App\Http\Controllers\RemisionInternaController;
 use App\Http\Controllers\ReporteController;
 use App\Http\Controllers\ThemePreferenceController;
 use App\Http\Controllers\UsuarioController;
@@ -219,6 +219,10 @@ Route::middleware(['auth', 'cuenta.activa'])->group(function () {
 
     Route::middleware('permission:correos.review')->group(function () {
         Route::get('bandeja-correo', [BandejaCorreoController::class, 'index'])->name('bandeja-correo.index');
+        Route::get('bandeja-correo/{mensaje}/radicar', [BandejaCorreoController::class, 'radicar'])->name('bandeja-correo.radicar');
+        Route::post('bandeja-correo/{mensaje}/radicar', [BandejaCorreoController::class, 'radicarStore'])->name('bandeja-correo.radicar.store');
+        Route::get('bandeja-correo/{mensaje}/adjuntos/{adjunto}', [BandejaCorreoController::class, 'descargarAdjunto'])
+            ->name('bandeja-correo.adjunto');
         Route::get('bandeja-correo/{mensaje}', [BandejaCorreoController::class, 'show'])->name('bandeja-correo.show');
         Route::post('bandeja-correo/{mensaje}/confirmar', [BandejaCorreoController::class, 'confirmar'])
             ->name('bandeja-correo.confirmar');

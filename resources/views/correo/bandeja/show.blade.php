@@ -1,9 +1,11 @@
 @extends('layouts.pqrsd')
 @section('title', 'Mensaje correo')
-@section('heading', $mensaje->asunto ?: '(sin asunto)')
+@section('heading')
+{{ $mensaje->asunto ?: '(sin asunto)' }}
+@endsection
 @section('subheading', 'Detalle, hilo y acciones de clasificación')
 @section('content')
-<a class="back-button" href="{{ route('bandeja-correo.index') }}">← Bandeja</a>
+<a class="back-button" href="{{ route('pqrsd.index') }}#correos-pendientes">← Bandeja de PQRSD</a>
 
 <div class="form-grid" style="margin-top:18px">
     <div class="card card-pad">
@@ -12,7 +14,8 @@
         <p><strong>Remitente:</strong> {{ $mensaje->remitente_nombre }} &lt;{{ $mensaje->remitente }}&gt;</p>
         <p><strong>Message-ID:</strong> <code>{{ $mensaje->message_id }}</code></p>
         <p><strong>In-Reply-To:</strong> <code>{{ $mensaje->in_reply_to ?: '—' }}</code></p>
-        <p><strong>Clasificación:</strong> {{ str_replace('_',' ', $mensaje->clasificacion) }}</p>
+        <p><strong>Estado de revisión:</strong> {{ $mensaje->etiquetaRevision() }}</p>
+        <p><strong>Gmail ID:</strong> <code>{{ $mensaje->gmail_message_id ?: '—' }}</code></p>
         <p><strong>Motivo:</strong> {{ $mensaje->motivo_clasificacion }}</p>
         <p><strong>Radicado:</strong>
             @if($mensaje->pqrsd)
@@ -27,7 +30,10 @@
             <h3>Adjuntos</h3>
             <ul>
                 @foreach($mensaje->adjuntos as $adj)
-                    <li>{{ $adj->nombre_original }} ({{ $adj->tamano }} bytes)</li>
+                    <li>
+                        <a href="{{ route('bandeja-correo.adjunto', [$mensaje, $adj]) }}">{{ $adj->nombre_original }}</a>
+                        ({{ $adj->tamano }} bytes)
+                    </li>
                 @endforeach
             </ul>
         @endif
@@ -38,10 +44,7 @@
         @if($mensaje->clasificacion === 'pendiente_revision')
         <div class="card card-pad">
             <h3 style="margin-top:0">Acciones de revisión</h3>
-            <form method="POST" action="{{ route('bandeja-correo.confirmar', $mensaje) }}" style="margin-bottom:12px">
-                @csrf
-                <button class="btn btn-green" type="submit">Confirmar como nueva PQRSD</button>
-            </form>
+            <p style="margin-top:0"><a class="btn btn-green" href="{{ route('bandeja-correo.radicar', $mensaje) }}">Radicar correo</a></p>
             <form method="POST" action="{{ route('bandeja-correo.asociar', $mensaje) }}" style="margin-bottom:12px">
                 @csrf
                 <label class="form-label">Asociar a radicado existente</label>

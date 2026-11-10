@@ -80,4 +80,40 @@ class MensajeCorreo extends Model
         return $query->where('clasificacion', 'pendiente_revision')
             ->where('direccion', 'entrante');
     }
+
+    public function scopeSinExpediente($query)
+    {
+        return $query->pendientesRevision()->whereNull('pqrsd_id');
+    }
+
+    public function scopeVisiblesPara($query, User $usuario)
+    {
+        if (! $usuario->can('correos.review')) {
+            return $query->whereRaw('0 = 1');
+        }
+
+        if ($usuario->can('pqrsd.view_all')) {
+            return $query;
+        }
+
+        $uid = $usuario->id;
+
+        return $query->whereHas('pqrsd', function ($casos) use ($uid) {
+            $casos->where('responsable_id', $uid)
+                ->orWhere('creado_por', $uid)
+                ->orWhere('radicado_por', $uid);
+        });
+    }
+
+    public function etiquetaRevision(): string
+    {
+        return match ($this->clasificacion) {
+            'pendiente_revision' => 'Pendiente de radicación',
+            'nueva_pqrsd' => 'Radicado',
+            'respuesta_caso' => 'Asociado al expediente',
+            'descartado' => 'Descartado',
+            'ruido' => 'Ruido',
+            default => str_replace('_', ' ', (string) $this->clasificacion),
+        };
+    }
 }

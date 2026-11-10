@@ -206,6 +206,49 @@
     <div class="alert alert-warning" role="status">Hay {{ $resumen['alertas_vitales_preventivas'] }} solicitudes sin clasificar con alerta preventiva de posible riesgo vital. Revíselas primero. El plazo formal se calcula al clasificar, desde la recepción original.</div>
 @endif
 
+@can('correos.review')
+<section class="card card-pad" id="correos-pendientes" style="margin-bottom:18px" aria-labelledby="titulo-correos-pendientes">
+    <h2 id="titulo-correos-pendientes" style="margin-top:0">Correos pendientes de radicación</h2>
+    <p class="muted">Llegaron al buzón y todavía no tienen expediente. No se suman a los indicadores de solicitudes radicadas.</p>
+    <p><strong>{{ $correosPendientesTotal }}</strong> por revisar</p>
+    @if($correosPendientesTotal > 0)
+        <div class="table-wrap">
+            <table class="pqrsd-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Remitente</th>
+                        <th scope="col">Asunto</th>
+                        <th scope="col">Fecha</th>
+                        <th scope="col">Buzón</th>
+                        <th scope="col">Estado</th>
+                        <th scope="col">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($correosPendientes as $correo)
+                        <tr>
+                            <td>{{ $correo->remitente_nombre ?: 'Sin nombre' }}<div class="muted">{{ $correo->remitente }}</div></td>
+                            <td>{{ $correo->asunto ?: '(sin asunto)' }}</td>
+                            <td>{{ $correo->fecha_mensaje?->timezone('America/Bogota')->format('d/m/Y H:i') }}</td>
+                            <td>{{ $correo->cuenta?->direccion }}</td>
+                            <td>{{ $correo->etiquetaRevision() }}</td>
+                            <td>
+                                <a class="btn btn-secondary" href="{{ route('bandeja-correo.show', $correo) }}">Abrir</a>
+                                <a class="btn btn-green" href="{{ route('bandeja-correo.radicar', $correo) }}">Radicar correo</a>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+        @if($correosPendientesTotal > $correosPendientes->count())
+            <p class="muted">Se muestran los {{ $correosPendientes->count() }} más recientes.</p>
+        @endif
+    @endif
+    <p style="margin-bottom:0"><a href="{{ route('bandeja-correo.index') }}">Abrir la revisión completa</a></p>
+</section>
+@endcan
+
 <div class="card card-pad">
     <p class="bandeja-scroll-hint" id="bandeja-scroll-hint">
         En pantallas intermedias puede desplazarse horizontalmente dentro del listado; la columna «Ver expediente» permanece visible a la derecha.

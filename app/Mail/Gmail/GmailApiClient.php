@@ -9,7 +9,9 @@ namespace App\Mail\Gmail;
 interface GmailApiClient
 {
     /**
-     * @return array{historyId:?string,messages:array<int, array<string, mixed>>}
+     * Recorre todas las páginas. nextPageToken queda null solo cuando la lista está completa.
+     *
+     * @return array{historyId:?string,messages:array<int, array<string, mixed>>,nextPageToken:?string}
      *
      * @throws GmailApiException
      */
@@ -17,8 +19,9 @@ interface GmailApiClient
 
     /**
      * Recuperación cuando historyId expiró (HTTP 404).
+     * Recorre todas las páginas de messages.list.
      *
-     * @return array{historyId:?string,messages:array<int, array<string, mixed>>}
+     * @return array{historyId:?string,messages:array<int, array<string, mixed>>,nextPageToken:?string}
      */
     public function listRecentMessages(string $userId, ?string $query = null, int $maxResults = 50): array;
 

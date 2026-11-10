@@ -2,6 +2,7 @@
 
 namespace App\Mail\Gmail;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -14,6 +15,10 @@ class HttpGmailApiClient implements GmailApiClient
 {
     private const BASE = 'https://gmail.googleapis.com/gmail/v1';
 
+    private const PAGE_SIZE = 100;
+
+    private const MAX_PAGES = 100;
+
     public function __construct(
         private readonly string $accessToken,
     ) {
@@ -24,53 +29,100 @@ class HttpGmailApiClient implements GmailApiClient
 
     public function listHistory(string $userId, string $startHistoryId, ?string $pageToken = null): array
     {
-        $query = [
-            'startHistoryId' => $startHistoryId,
-            'historyTypes' => 'messageAdded',
-        ];
-        if ($pageToken) {
-            $query['pageToken'] = $pageToken;
-        }
+        $ids = [];
+        $historyId = null;
+        $vistos = [];
+        $pagina = 0;
 
-        $response = $this->request('GET', "/users/{$userId}/history", $query);
+        do {
+            $pagina++;
+            if ($pagina > self::MAX_PAGES) {
+                throw GmailApiException::temporary('history.list superó el máximo de páginas');
+            }
+            if ($pageToken) {
+                if (isset($vistos[$pageToken])) {
+                    throw GmailApiException::temporary('history.list repitió pageToken');
+                }
+                $vistos[$pageToken] = true;
+            }
 
-        if ($response->status() === 404) {
-            throw GmailApiException::historyExpired('history.list 404');
-        }
-        $this->assertOk($response);
+            $query = [
+                'startHistoryId' => $startHistoryId,
+                'historyTypes' => 'messageAdded',
+                'maxResults' => self::PAGE_SIZE,
+            ];
+            if ($pageToken) {
+                $query['pageToken'] = $pageToken;
+            }
 
-        $json = $response->json() ?? [];
-        $messages = [];
-        foreach ($json['history'] ?? [] as $entry) {
-            foreach ($entry['messagesAdded'] ?? [] as $added) {
-                if (! empty($added['message']['id'])) {
-                    $messages[] = ['id' => $added['message']['id']];
+            $response = $this->request('GET', "/users/{$userId}/history", $query);
+            if ($response->status() === 404) {
+                throw GmailApiException::historyExpired('history.list 404');
+            }
+            $this->assertOk($response);
+
+            $json = $response->json() ?? [];
+            foreach ($json['history'] ?? [] as $entry) {
+                foreach ($entry['messagesAdded'] ?? [] as $added) {
+                    $this->recordarId($ids, $added['message']['id'] ?? null);
                 }
             }
-        }
+            if (isset($json['historyId'])) {
+                $historyId = (string) $json['historyId'];
+            }
+            $pageToken = filled($json['nextPageToken'] ?? null) ? (string) $json['nextPageToken'] : null;
+        } while ($pageToken);
 
         return [
-            'historyId' => isset($json['historyId']) ? (string) $json['historyId'] : null,
-            'messages' => $messages,
+            'historyId' => $historyId,
+            'messages' => array_values($ids),
+            'nextPageToken' => null,
         ];
     }
 
     public function listRecentMessages(string $userId, ?string $query = null, int $maxResults = 50): array
     {
-        $params = ['maxResults' => $maxResults];
-        if ($query) {
-            $params['q'] = $query;
-        }
+        $ids = [];
+        $pageToken = null;
+        $vistos = [];
+        $pagina = 0;
+        $tamano = max(1, min($maxResults, 500));
 
-        $response = $this->request('GET', "/users/{$userId}/messages", $params);
-        $this->assertOk($response);
-        $json = $response->json() ?? [];
+        do {
+            $pagina++;
+            if ($pagina > self::MAX_PAGES) {
+                throw GmailApiException::temporary('messages.list superó el máximo de páginas');
+            }
+            if ($pageToken) {
+                if (isset($vistos[$pageToken])) {
+                    throw GmailApiException::temporary('messages.list repitió pageToken');
+                }
+                $vistos[$pageToken] = true;
+            }
+
+            $params = ['maxResults' => $tamano];
+            if ($query) {
+                $params['q'] = $query;
+            }
+            if ($pageToken) {
+                $params['pageToken'] = $pageToken;
+            }
+
+            $response = $this->request('GET', "/users/{$userId}/messages", $params);
+            $this->assertOk($response);
+            $json = $response->json() ?? [];
+            foreach ($json['messages'] ?? [] as $message) {
+                $this->recordarId($ids, $message['id'] ?? null);
+            }
+            $pageToken = filled($json['nextPageToken'] ?? null) ? (string) $json['nextPageToken'] : null;
+        } while ($pageToken);
 
         $profile = $this->getProfile($userId);
 
         return [
             'historyId' => $profile['historyId'] ?? null,
-            'messages' => $json['messages'] ?? [],
+            'messages' => array_values($ids),
+            'nextPageToken' => null,
         ];
     }
 
@@ -197,7 +249,7 @@ class HttpGmailApiClient implements GmailApiClient
      * @param  array<string, mixed>  $query
      * @param  array<string, mixed>|null  $jsonBody
      */
-    private function request(string $method, string $path, array $query = [], ?array $jsonBody = null): \Illuminate\Http\Client\Response
+    private function request(string $method, string $path, array $query = [], ?array $jsonBody = null): Response
     {
         $pending = Http::withToken($this->accessToken)
             ->acceptJson()
@@ -212,7 +264,19 @@ class HttpGmailApiClient implements GmailApiClient
         };
     }
 
-    private function assertOk(\Illuminate\Http\Client\Response $response): void
+    /**
+     * @param  array<string, array{id:string}>  $ids
+     */
+    private function recordarId(array &$ids, mixed $id): void
+    {
+        if (! is_string($id) || $id === '' || isset($ids[$id])) {
+            return;
+        }
+
+        $ids[$id] = ['id' => $id];
+    }
+
+    private function assertOk(Response $response): void
     {
         if ($response->status() === 401 || $response->status() === 403) {
             throw GmailApiException::authFailed('HTTP '.$response->status());

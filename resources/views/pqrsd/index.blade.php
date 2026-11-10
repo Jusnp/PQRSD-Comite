@@ -245,7 +245,10 @@
             <p class="muted">Se muestran los {{ $correosPendientes->count() }} más recientes.</p>
         @endif
     @endif
-    <p style="margin-bottom:0"><a href="{{ route('bandeja-correo.index') }}">Abrir la revisión completa</a></p>
+    <p style="margin-bottom:0">
+        <a href="{{ route('bandeja-correo.index', ['filtro' => 'pendientes']) }}">Abrir la revisión completa</a>
+        · <a href="{{ route('bandeja-correo.index', ['filtro' => 'radicados']) }}">Ver correos radicados</a>
+    </p>
 </section>
 @endcan
 

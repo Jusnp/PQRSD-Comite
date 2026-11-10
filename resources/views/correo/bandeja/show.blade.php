@@ -5,7 +5,12 @@
 @endsection
 @section('subheading', 'Detalle, hilo y acciones de clasificación')
 @section('content')
-<a class="back-button" href="{{ route('pqrsd.index') }}#correos-pendientes">← Bandeja de PQRSD</a>
+@if($mensaje->pqrsd)
+    @can('view', $mensaje->pqrsd)
+        <a class="back-button" href="{{ route('pqrsd.show', $mensaje->pqrsd) }}">← Expediente {{ $mensaje->pqrsd->radicado }}</a>
+    @endcan
+@endif
+<a class="back-button" href="{{ route('bandeja-correo.index', ['filtro' => $mensaje->pqrsd_id ? 'radicados' : 'pendientes']) }}">← {{ $mensaje->pqrsd_id ? 'Correos radicados' : 'Correos pendientes' }}</a>
 
 <div class="form-grid" style="margin-top:18px">
     <div class="card card-pad">
@@ -19,7 +24,11 @@
         <p><strong>Motivo:</strong> {{ $mensaje->motivo_clasificacion }}</p>
         <p><strong>Radicado:</strong>
             @if($mensaje->pqrsd)
-                <a href="{{ route('pqrsd.show', $mensaje->pqrsd) }}">{{ $mensaje->pqrsd->radicado }}</a>
+                @can('view', $mensaje->pqrsd)
+                    <a href="{{ route('pqrsd.show', $mensaje->pqrsd) }}">{{ $mensaje->pqrsd->radicado }}</a>
+                @else
+                    {{ $mensaje->pqrsd->radicado }}
+                @endcan
             @else
                 {{ $mensaje->radicado_detectado ?: '—' }}
             @endif
@@ -69,6 +78,10 @@
         @can('correos.reply')
         <div class="card card-pad">
             <h3 style="margin-top:0">Responder (conserva hilo)</h3>
+            @if(! $mensaje->cuenta?->activo)
+                <p role="status">Envío deshabilitado: cuenta de correo inactiva</p>
+                <button class="btn btn-green" type="button" disabled>Enviar respuesta</button>
+            @else
             <form method="POST" action="{{ route('bandeja-correo.responder', $mensaje) }}">
                 @csrf
                 <label class="form-label">Asunto</label>
@@ -77,6 +90,7 @@
                 <textarea class="form-input" name="cuerpo" rows="6" required style="min-height:140px">{{ old('cuerpo') }}</textarea>
                 <button class="btn btn-green" style="margin-top:10px" type="submit">Enviar respuesta</button>
             </form>
+            @endif
         </div>
         @endcan
     </div>

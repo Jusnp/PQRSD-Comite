@@ -37,6 +37,7 @@ class BandejaCorreoController extends Controller
 
         match ($filtro) {
             'pendientes' => $query->sinExpediente(),
+            'radicados' => $query->whereNotNull('pqrsd_id'),
             'respuestas' => $query->where('clasificacion', 'respuesta_caso'),
             'ruido' => $query->whereIn('clasificacion', ['ruido', 'descartado']),
             'todos' => null,
@@ -55,16 +56,28 @@ class BandejaCorreoController extends Controller
 
         $hilo = MensajeCorreo::with('cuenta')
             ->where(function ($q) use ($mensaje) {
-                $q->where(function ($hiloCuenta) use ($mensaje) {
-                    $hiloCuenta->where('thread_key', $mensaje->thread_key)
-                        ->where('cuenta_correo_id', $mensaje->cuenta_correo_id);
-                });
-                if ($mensaje->pqrsd_id) {
-                    $q->orWhere('pqrsd_id', $mensaje->pqrsd_id);
+                $q->whereKey($mensaje->id);
+                if (filled($mensaje->thread_key)) {
+                    $q->orWhere(function ($hiloCuenta) use ($mensaje) {
+                        $hiloCuenta->where('thread_key', $mensaje->thread_key)
+                            ->where('cuenta_correo_id', $mensaje->cuenta_correo_id);
+                    });
                 }
-            })
-            ->orderBy('fecha_mensaje')
-            ->get();
+                if ($mensaje->pqrsd_id) {
+                    $q->orWhere(function ($mismoExpediente) use ($mensaje) {
+                        $mismoExpediente->where('pqrsd_id', $mensaje->pqrsd_id)
+                            ->where('cuenta_correo_id', $mensaje->cuenta_correo_id);
+                    });
+                }
+            });
+        $usuario = Auth::user();
+        if ($usuario && ! $usuario->can('pqrsd.view_all')) {
+            $hilo->where(function ($q) use ($mensaje) {
+                $q->whereKey($mensaje->id)
+                    ->orWhere(fn ($permitidos) => $permitidos->visiblesPara(Auth::user()));
+            });
+        }
+        $hilo = $hilo->orderBy('fecha_mensaje')->get();
 
         $casos = $this->casosAsociables($mensaje);
 
@@ -169,6 +182,12 @@ class BandejaCorreoController extends Controller
     {
         abort_unless(Auth::user()?->can('correos.reply'), 403);
         $this->asegurarVisible($mensaje);
+        $mensaje->loadMissing('cuenta');
+        if (! $mensaje->cuenta?->activo) {
+            return back()->withErrors([
+                'cuerpo' => 'Envío deshabilitado: cuenta de correo inactiva',
+            ]);
+        }
         $data = $request->validate([
             'cuerpo' => ['required', 'string'],
             'asunto' => ['nullable', 'string', 'max:255'],

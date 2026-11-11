@@ -180,9 +180,14 @@ class GmailApiProviderTest extends TestCase
             to: 'ciudadano@example.test',
             subject: 'Respuesta',
             bodyText: 'Texto de respuesta institucional',
+            inReplyTo: '<original@example.test>',
+            references: '<original@example.test>',
+            gmailThreadId: 'thread-original-123',
         ));
         $this->assertTrue($ok['ok']);
         $this->assertNotNull($ok['message_id']);
+        $this->assertCount(1, $fake->sent);
+        $this->assertSame('thread-original-123', $fake->sent[0]['threadId']);
 
         $fake->sendOk = false;
         $fail = $provider->send($cuenta, new OutboundMessageData(

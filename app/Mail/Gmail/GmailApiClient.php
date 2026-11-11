@@ -33,7 +33,7 @@ interface GmailApiClient
     /**
      * @return array{ok:bool,id:?string,threadId:?string,error:?string}
      */
-    public function sendRaw(string $userId, string $rawRfc822): array;
+    public function sendRaw(string $userId, string $rawRfc822, ?string $threadId = null): array;
 
     /**
      * Inserta el mensaje en la bandeja (users.messages.insert).

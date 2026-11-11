@@ -132,6 +132,7 @@ class NavegacionCorreosVinculadosTest extends TestCase
     {
         $cuenta = $this->buzon(true);
         $auxiliar = $this->usuario('auxiliar_pqrsd');
+
         foreach (range(1, 21) as $numero) {
             MensajeCorreo::query()->create([
                 'cuenta_correo_id' => $cuenta->id,
@@ -279,6 +280,11 @@ class NavegacionCorreosVinculadosTest extends TestCase
         $saliente = MensajeCorreo::query()->where('direccion', 'saliente')->first();
         $this->assertNotNull($saliente);
         $this->assertSame(1, $falso->sendAttempts);
+
+        // Comprueba que el identificador Gmail original llega al cliente.
+        $this->assertCount(1, $falso->sent);
+        $this->assertSame('hilo-original-gmail', $falso->sent[0]['threadId']);
+
         $this->assertSame($mensaje->message_id, $saliente->in_reply_to);
         $this->assertSame($cuenta->id, $saliente->cuenta_correo_id);
         $this->assertSame('hilo-original-gmail', $saliente->thread_key);

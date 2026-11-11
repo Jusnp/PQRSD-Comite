@@ -143,7 +143,7 @@ class GoogleGmailMailProvider implements MailProvider
             $client = $this->clientFor($cuenta);
             $userId = $this->credentials->delegatedUser($cuenta);
             $raw = $this->buildRfc822($cuenta, $mensaje);
-            $result = $client->sendRaw($userId, $raw);
+            $result = $client->sendRaw($userId, $raw, $mensaje->gmailThreadId);
 
             if (! ($result['ok'] ?? false)) {
                 return [

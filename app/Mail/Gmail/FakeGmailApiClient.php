@@ -30,6 +30,9 @@ class FakeGmailApiClient implements GmailApiClient
 
     public int $sendAttempts = 0;
 
+    /** @var array<int, array{userId:string,raw:string,threadId:?string}> */
+    public array $sent = [];
+
     /** @var array<int, array{userId:string,raw:string,labelIds:array<int, string>}> */
     public array $inserted = [];
 
@@ -79,10 +82,16 @@ class FakeGmailApiClient implements GmailApiClient
         return $this->messagesById[$messageId];
     }
 
-    public function sendRaw(string $userId, string $rawRfc822): array
+    public function sendRaw(string $userId, string $rawRfc822, ?string $threadId = null): array
     {
         $this->sendAttempts++;
         $this->assertAuth();
+
+        $this->sent[] = [
+            'userId' => $userId,
+            'raw' => $rawRfc822,
+            'threadId' => $threadId,
+        ];
 
         if (! $this->sendOk) {
             return ['ok' => false, 'id' => null, 'threadId' => null, 'error' => 'send failed'];

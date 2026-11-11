@@ -124,6 +124,7 @@ class EmailReplyService
             inReplyTo: $original?->message_id,
             references: $references ?: $original?->message_id,
             rfcMessageId: $rfcId,
+            gmailThreadId: $original?->gmail_thread_id,
         ));
 
         if (! ($envio['ok'] ?? false)) {

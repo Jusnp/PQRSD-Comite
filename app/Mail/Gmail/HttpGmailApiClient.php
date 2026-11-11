@@ -136,12 +136,18 @@ class HttpGmailApiClient implements GmailApiClient
         return $response->json() ?? [];
     }
 
-    public function sendRaw(string $userId, string $rawRfc822): array
+    public function sendRaw(string $userId, string $rawRfc822, ?string $threadId = null): array
     {
         $encoded = rtrim(strtr(base64_encode($rawRfc822), '+/', '-_'), '=');
-        $response = $this->request('POST', "/users/{$userId}/messages/send", [], [
+        $body = [
             'raw' => $encoded,
-        ]);
+        ];
+
+        if ($threadId !== null && $threadId !== '') {
+            $body['threadId'] = $threadId;
+        }
+
+        $response = $this->request('POST', "/users/{$userId}/messages/send", [], $body);
 
         if (! $response->successful()) {
             Log::channel('correo_sync')->warning('Gmail send falló', [

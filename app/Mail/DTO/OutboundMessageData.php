@@ -18,5 +18,6 @@ readonly class OutboundMessageData
         public array $cc = [],
         public array $adjuntos = [],
         public ?string $rfcMessageId = null,
+        public ?string $gmailThreadId = null,
     ) {}
 }

@@ -57,12 +57,21 @@ class BandejaCorreoController extends Controller
         $hilo = MensajeCorreo::with('cuenta')
             ->where(function ($q) use ($mensaje) {
                 $q->whereKey($mensaje->id);
+
                 if (filled($mensaje->thread_key)) {
                     $q->orWhere(function ($hiloCuenta) use ($mensaje) {
                         $hiloCuenta->where('thread_key', $mensaje->thread_key)
                             ->where('cuenta_correo_id', $mensaje->cuenta_correo_id);
                     });
                 }
+
+                if (filled($mensaje->gmail_thread_id)) {
+                    $q->orWhere(function ($hiloGmail) use ($mensaje) {
+                        $hiloGmail->where('gmail_thread_id', $mensaje->gmail_thread_id)
+                            ->where('cuenta_correo_id', $mensaje->cuenta_correo_id);
+                    });
+                }
+
                 if ($mensaje->pqrsd_id) {
                     $q->orWhere(function ($mismoExpediente) use ($mensaje) {
                         $mismoExpediente->where('pqrsd_id', $mensaje->pqrsd_id)
@@ -70,13 +79,16 @@ class BandejaCorreoController extends Controller
                     });
                 }
             });
+
         $usuario = Auth::user();
+
         if ($usuario && ! $usuario->can('pqrsd.view_all')) {
             $hilo->where(function ($q) use ($mensaje) {
                 $q->whereKey($mensaje->id)
                     ->orWhere(fn ($permitidos) => $permitidos->visiblesPara(Auth::user()));
             });
         }
+
         $hilo = $hilo->orderBy('fecha_mensaje')->get();
 
         $casos = $this->casosAsociables($mensaje);
@@ -88,6 +100,7 @@ class BandejaCorreoController extends Controller
     {
         $this->asegurarVisible($mensaje);
         $mensaje->load('cuenta.aseguradora');
+
         if ($mensaje->pqrsd_id || $mensaje->clasificacion !== 'pendiente_revision') {
             return redirect()
                 ->route('bandeja-correo.show', $mensaje)
@@ -100,10 +113,14 @@ class BandejaCorreoController extends Controller
         ));
     }
 
-    public function radicarStore(Request $request, MensajeCorreo $mensaje, EmailReviewService $review): RedirectResponse
-    {
+    public function radicarStore(
+        Request $request,
+        MensajeCorreo $mensaje,
+        EmailReviewService $review
+    ): RedirectResponse {
         $this->asegurarVisible($mensaje);
         $mensaje->load('cuenta');
+
         $data = $request->validate([
             'solicitante_nombre' => [
                 'nullable',
@@ -123,6 +140,7 @@ class BandejaCorreoController extends Controller
             'descripcion' => ['required', 'string', 'min:10'],
             'es_anonimo' => ['sometimes', 'boolean'],
         ]);
+
         $data['es_anonimo'] = $request->boolean('es_anonimo');
 
         try {
@@ -145,12 +163,17 @@ class BandejaCorreoController extends Controller
             ->with('error', 'Revise y complete los datos antes de radicar el correo.');
     }
 
-    public function asociar(Request $request, MensajeCorreo $mensaje, EmailReviewService $review): RedirectResponse
-    {
+    public function asociar(
+        Request $request,
+        MensajeCorreo $mensaje,
+        EmailReviewService $review
+    ): RedirectResponse {
         $this->asegurarVisible($mensaje);
+
         $data = $request->validate([
             'pqrsd_id' => ['required', 'exists:pqrsd,id'],
         ]);
+
         $this->authorize('view', Pqrsd::query()->findOrFail($data['pqrsd_id']));
 
         try {
@@ -162,9 +185,13 @@ class BandejaCorreoController extends Controller
         return back()->with('success', 'Mensaje asociado al radicado.');
     }
 
-    public function descartar(Request $request, MensajeCorreo $mensaje, EmailReviewService $review): RedirectResponse
-    {
+    public function descartar(
+        Request $request,
+        MensajeCorreo $mensaje,
+        EmailReviewService $review
+    ): RedirectResponse {
         $this->asegurarVisible($mensaje);
+
         $data = $request->validate([
             'motivo' => ['required', 'string', 'max:500'],
         ]);
@@ -178,16 +205,22 @@ class BandejaCorreoController extends Controller
         return redirect()->route('bandeja-correo.index')->with('success', 'Mensaje descartado.');
     }
 
-    public function responder(Request $request, MensajeCorreo $mensaje, EmailReplyService $reply): RedirectResponse
-    {
+    public function responder(
+        Request $request,
+        MensajeCorreo $mensaje,
+        EmailReplyService $reply
+    ): RedirectResponse {
         abort_unless(Auth::user()?->can('correos.reply'), 403);
+
         $this->asegurarVisible($mensaje);
         $mensaje->loadMissing('cuenta');
+
         if (! $mensaje->cuenta?->activo) {
             return back()->withErrors([
                 'cuerpo' => 'Envío deshabilitado: cuenta de correo inactiva',
             ]);
         }
+
         $data = $request->validate([
             'cuerpo' => ['required', 'string'],
             'asunto' => ['nullable', 'string', 'max:255'],
@@ -207,19 +240,25 @@ class BandejaCorreoController extends Controller
         return back()->with('success', 'Respuesta enviada y registrada en el hilo.');
     }
 
-    public function descargarAdjunto(MensajeCorreo $mensaje, AdjuntoCorreo $adjunto, PqrsdService $pqrsdService): StreamedResponse
-    {
+    public function descargarAdjunto(
+        MensajeCorreo $mensaje,
+        AdjuntoCorreo $adjunto,
+        PqrsdService $pqrsdService
+    ): StreamedResponse {
         $this->asegurarVisible($mensaje);
+
         if ((int) $adjunto->mensaje_correo_id !== (int) $mensaje->id) {
             abort(404);
         }
 
         $ruta = str_replace('\\', '/', (string) $adjunto->ruta);
+
         if (! $this->rutaAdjuntoPermitida($ruta)) {
             abort(404);
         }
 
         $disk = Storage::disk(config('pqrsd_correo.adjuntos_disk', 'local'));
+
         if (! $disk->exists($ruta)) {
             abort(404);
         }
@@ -242,7 +281,12 @@ class BandejaCorreoController extends Controller
     private function asegurarVisible(MensajeCorreo $mensaje): void
     {
         $this->asegurarRevision();
-        $visible = MensajeCorreo::query()->visiblesPara(Auth::user())->whereKey($mensaje->id)->exists();
+
+        $visible = MensajeCorreo::query()
+            ->visiblesPara(Auth::user())
+            ->whereKey($mensaje->id)
+            ->exists();
+
         abort_unless($visible, 404);
     }
 
@@ -269,10 +313,13 @@ class BandejaCorreoController extends Controller
     private function casosAsociables(MensajeCorreo $mensaje): Collection
     {
         $casos = Pqrsd::query()->latest('id');
+
         if ($mensaje->cuenta?->aseguradora_id) {
             $casos->where('aseguradora_id', $mensaje->cuenta->aseguradora_id);
         }
+
         $usuario = Auth::user();
+
         if (! $usuario->can('pqrsd.view_all')) {
             $casos->where(function ($q) use ($usuario) {
                 $q->where('responsable_id', $usuario->id)

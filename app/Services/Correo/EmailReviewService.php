@@ -61,6 +61,12 @@ class EmailReviewService
                 'estado_procesamiento' => 'procesado',
             ]);
 
+            $this->asociarPendientesDelHilo(
+                $mensaje,
+                $caso,
+                $usuario,
+                'Asociado al expediente al confirmar el hilo de Gmail'
+            );
             ActuacionPqrsd::create([
                 'pqrsd_id' => $caso->id,
                 'usuario_id' => $usuario->id,
@@ -110,6 +116,12 @@ class EmailReviewService
                 'estado_procesamiento' => 'procesado',
             ]);
 
+            $this->asociarPendientesDelHilo(
+                $mensaje,
+                $caso,
+                $usuario,
+                'Asociado al expediente desde la revisión del hilo de Gmail'
+            );
             ActuacionPqrsd::create([
                 'pqrsd_id' => $pqrsdId,
                 'usuario_id' => $usuario->id,
@@ -133,6 +145,78 @@ class EmailReviewService
         });
     }
 
+    /**
+     * Vincula los mensajes entrantes pendientes del mismo hilo de Gmail.
+     * Nunca sobrescribe expedientes existentes ni cruza cuentas de correo.
+     */
+    private function asociarPendientesDelHilo(
+        MensajeCorreo $mensaje,
+        Pqrsd $caso,
+        User $usuario,
+        string $motivo
+    ): void {
+        $threadId = $mensaje->gmail_thread_id;
+        $cuentaId = $mensaje->cuenta_correo_id;
+
+        if (! $threadId || ! $cuentaId) {
+            return;
+        }
+
+        $mensajes = MensajeCorreo::query()
+            ->where('cuenta_correo_id', $cuentaId)
+            ->where('gmail_thread_id', $threadId)
+            ->lockForUpdate()
+            ->get(['id', 'pqrsd_id', 'clasificacion', 'direccion']);
+
+        // Si el hilo ya contiene asociaciones a varios expedientes,
+        // no se propaga ninguna asociación automáticamente.
+        $casosVinculados = $mensajes->pluck('pqrsd_id')
+            ->filter()
+            ->map(static fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if (
+            $casosVinculados->count() !== 1
+            || (int) $casosVinculados->first() !== (int) $caso->id
+        ) {
+            return;
+        }
+
+        $pendientesIds = $mensajes
+            ->filter(static function (MensajeCorreo $hermano): bool {
+                return $hermano->pqrsd_id === null
+                    && $hermano->direccion === 'entrante'
+                    && ! in_array(
+                        $hermano->clasificacion,
+                        ['ruido', 'descartado'],
+                        true
+                    );
+            })
+            ->pluck('id')
+            ->all();
+
+        if (empty($pendientesIds)) {
+            return;
+        }
+
+        MensajeCorreo::query()
+            ->whereIn('id', $pendientesIds)
+            ->where('cuenta_correo_id', $cuentaId)
+            ->where('gmail_thread_id', $threadId)
+            ->where('direccion', 'entrante')
+            ->whereNull('pqrsd_id')
+            ->whereNotIn('clasificacion', ['ruido', 'descartado'])
+            ->update([
+                'pqrsd_id' => $caso->id,
+                'clasificacion' => 'respuesta_caso',
+                'radicado_detectado' => $caso->radicado,
+                'revisado_por' => $usuario->id,
+                'revisado_en' => now('America/Bogota'),
+                'motivo_clasificacion' => $motivo,
+                'estado_procesamiento' => 'procesado',
+            ]);
+    }
     public function descartar(MensajeCorreo $mensaje, User $usuario, string $motivo): MensajeCorreo
     {
         return DB::transaction(function () use ($mensaje, $usuario, $motivo) {

@@ -292,6 +292,109 @@ class NavegacionCorreosVinculadosTest extends TestCase
         $this->assertTrue($cuenta->fresh()->activo);
     }
 
+    public function test_un_correo_nuevo_se_asocia_por_gmail_thread_id_sin_cabeceras(): void
+    {
+        $cuenta = $this->buzon(true);
+        $auxiliar = $this->usuario('auxiliar_pqrsd');
+        $caso = $this->caso($auxiliar, null);
+
+        $this->vincular($cuenta, $caso, 'original-thread-01', 'legacy-original')
+            ->update(['gmail_thread_id' => 'gmail-thread-01']);
+
+        $resultado = app(EmailIngestionService::class)->ingest($cuenta, new InboundMessageData(
+            messageId: '<reply-thread-01@example.test>',
+            inReplyTo: null,
+            references: null,
+            fromAddress: 'ciudadano@example.test',
+            fromName: 'Ciudadano',
+            toAddress: $cuenta->direccion,
+            cc: null,
+            originalRecipient: $cuenta->direccion,
+            subject: 'Seguimiento de conversación',
+            bodyText: 'Respuesta de seguimiento del ciudadano.',
+            bodyHtml: null,
+            rawHeaders: null,
+            rawEml: null,
+            date: Carbon::now('America/Bogota'),
+            metadatos: [
+                'uid' => 'gmail-reply-01',
+                'thread_id' => 'gmail-thread-01',
+            ],
+        ));
+
+        $this->assertNull($resultado['error']);
+        $this->assertSame($caso->id, $resultado['mensaje']->fresh()->pqrsd_id);
+        $this->assertSame('respuesta_caso', $resultado['mensaje']->fresh()->clasificacion);
+    }
+
+    public function test_asociar_correo_vincula_los_pendientes_del_mismo_hilo_gmail(): void
+    {
+        $cuenta = $this->buzon(true);
+        $auxiliar = $this->usuario('auxiliar_pqrsd');
+        $caso = $this->caso($auxiliar, null);
+
+        $seleccionado = $this->importar($cuenta, 'g-assoc-01', 'Correo seleccionado', 'Contenido seleccionado.');
+        $hermano = $this->importar($cuenta, 'g-assoc-02', 'Correo relacionado', 'Contenido relacionado.');
+
+        $seleccionado->update(['gmail_thread_id' => 'gmail-thread-assoc']);
+        $hermano->update(['gmail_thread_id' => 'gmail-thread-assoc']);
+
+        app(\App\Services\Correo\EmailReviewService::class)
+            ->asociarACaso($seleccionado, $caso->id, $auxiliar);
+
+        $this->assertSame($caso->id, $seleccionado->fresh()->pqrsd_id);
+        $this->assertSame($caso->id, $hermano->fresh()->pqrsd_id);
+    }
+
+    public function test_radicar_correo_vincula_los_pendientes_del_mismo_hilo_gmail(): void
+    {
+        $cuenta = $this->buzon(true);
+        $auxiliar = $this->usuario('auxiliar_pqrsd');
+
+        $seleccionado = $this->importar($cuenta, 'g-rad-01', 'Solicitud inicial', 'Contenido de la solicitud.');
+        $hermano = $this->importar($cuenta, 'g-rad-02', 'Seguimiento', 'Contenido del seguimiento.');
+
+        $seleccionado->update(['gmail_thread_id' => 'gmail-thread-rad']);
+        $hermano->update(['gmail_thread_id' => 'gmail-thread-rad']);
+
+        $radicado = app(\App\Services\Correo\EmailReviewService::class)
+            ->confirmarNuevaPqrsd($seleccionado, $auxiliar, [
+                'descripcion' => 'Solicitud recibida por correo.',
+                'solicitante_nombre' => 'Ciudadano de prueba',
+                'solicitante_email' => 'ciudadano@example.test',
+            ]);
+
+        $this->assertNotNull($radicado->pqrsd_id);
+        $this->assertSame($radicado->pqrsd_id, $hermano->fresh()->pqrsd_id);
+    }
+
+    public function test_conversacion_muestra_mensajes_con_el_mismo_gmail_thread_id(): void
+    {
+        $cuenta = $this->buzon(true);
+        $auxiliar = $this->usuario('auxiliar_pqrsd');
+        $caso = $this->caso($auxiliar, null);
+
+        $principal = $this->vincular($cuenta, $caso, 'principal-thread-view', 'legacy-key-principal');
+        $principal->update(['gmail_thread_id' => 'gmail-thread-view']);
+
+        $relacionado = $this->importar(
+            $cuenta,
+            'g-view-related',
+            'Seguimiento del mismo hilo',
+            'CONTENIDO_DEL_MISMO_HILO_GMAIL'
+        );
+
+        $relacionado->update([
+            'gmail_thread_id' => 'gmail-thread-view',
+            'thread_key' => 'legacy-key-diferente',
+        ]);
+
+        $this->actingAs($auxiliar)
+            ->get(route('bandeja-correo.show', $principal))
+            ->assertOk()
+            ->assertSee('CONTENIDO_DEL_MISMO_HILO_GMAIL', false);
+    }
+
     private function usuario(string $rol): User
     {
         $usuario = User::factory()->create(['activo' => true]);

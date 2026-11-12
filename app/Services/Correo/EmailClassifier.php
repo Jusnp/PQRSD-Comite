@@ -44,6 +44,13 @@ class EmailClassifier
             ($data->subject ?? '')."\n".($data->bodyText ?? '')."\n".($data->bodyHtml ?? '')
         );
 
+        // Gmail thread_id permite reconocer respuestas aunque no traigan
+        // In-Reply-To o References.
+        $porHiloGmail = $this->buscarPorHiloGmail($data, $cuenta, $radicado);
+
+        if ($porHiloGmail !== null) {
+            return $porHiloGmail;
+        }
         $porHeaders = $this->buscarPorHeaders($data, $cuenta);
         if ($porHeaders && $this->enlacePermitido($cuenta, $porHeaders->pqrsd)) {
             return [
@@ -141,6 +148,75 @@ class EmailClassifier
         return app(SeleccionBuzonCorreo::class)->permiteAsociar($cuenta, $caso);
     }
 
+    /**
+     * Busca expedientes asociados al mismo hilo de Gmail.
+     * La búsqueda siempre queda limitada al buzón de origen.
+     */
+    private function buscarPorHiloGmail(
+        InboundMessageData $data,
+        ?CuentaCorreo $cuenta,
+        ?string $radicado
+    ): ?array {
+        if (! $cuenta) {
+            return null;
+        }
+
+        $threadId = $data->metadatos['thread_id']
+            ?? $data->metadatos['gmail_thread_id']
+            ?? null;
+
+        if (! is_scalar($threadId)) {
+            return null;
+        }
+
+        $threadId = trim((string) $threadId);
+
+        if ($threadId === '') {
+            return null;
+        }
+
+        $casoIds = MensajeCorreo::query()
+            ->where('cuenta_correo_id', $cuenta->id)
+            ->where('gmail_thread_id', $threadId)
+            ->whereNotNull('pqrsd_id')
+            ->distinct()
+            ->pluck('pqrsd_id')
+            ->map(static fn ($id) => (int) $id)
+            ->values();
+
+        // No existe todavía un mensaje de ese hilo asociado.
+        // Se permite continuar con la clasificación habitual.
+        if ($casoIds->isEmpty()) {
+            return null;
+        }
+
+        $pendiente = [
+            'clasificacion' => 'pendiente_revision',
+            'pqrsd_id' => null,
+            'radicado_detectado' => $radicado,
+            'motivo' => 'El hilo de Gmail tiene asociaciones múltiples o no permitidas; requiere revisión manual.',
+            'thread_key' => $this->threadKey($data),
+        ];
+
+        // Un mismo hilo asociado a varios expedientes es ambiguo.
+        if ($casoIds->count() !== 1) {
+            return $pendiente;
+        }
+
+        $caso = Pqrsd::query()->find($casoIds->first());
+
+        if (! $caso || ! $this->enlacePermitido($cuenta, $caso)) {
+            return $pendiente;
+        }
+
+        return [
+            'clasificacion' => 'respuesta_caso',
+            'pqrsd_id' => $caso->id,
+            'radicado_detectado' => $caso->radicado ?? $radicado,
+            'motivo' => 'Asociado por Gmail thread_id al expediente existente.',
+            'thread_key' => $this->threadKey($data),
+        ];
+    }
     private function buscarPorHeaders(InboundMessageData $data, ?CuentaCorreo $cuenta): ?MensajeCorreo
     {
         $ids = collect();
